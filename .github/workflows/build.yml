@@ -51,7 +51,7 @@ jobs:
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 
       - name: Cache the header libraries and the static dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/prefix
@@ -126,7 +126,7 @@ jobs:
           path-type: inherit  # packaging needs the runner's python.org Python (py)
 
       - name: Cache the static dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: out/deps
           key: windows-${{ hashFiles('packaging/deps.sh') }}
