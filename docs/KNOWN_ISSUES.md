@@ -41,8 +41,7 @@ Measured on the test system above, 1080p:
 - The busy scenes are limited by the CPU, not the GPU: the PS4's GPU reads its command stream in
   hardware, the port decodes it in software. Two threads share that work (stage A decodes, about
   3.8 µs per draw; stage B records Vulkan commands) and both are close to full in the opening.
-  A faster CPU (higher single-core speed) helps most. Spreading stage A over more threads is the
-  next planned step; see [dev/HANDOFF.md](dev/HANDOFF.md).
+  A faster CPU (higher single-core speed) helps most.
 - 720p and 900p render resolutions lower the GPU's work, not the CPU's: they help weak GPUs,
   not the busy scenes above.
 - The first time a scene is shown, its shaders are compiled, which can stutter. Later runs use
