@@ -88,6 +88,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.deferred_readback = i != 0;
     } else if (key == "stale_readback") {
         v.stale_readback = i != 0;
+    } else if (key == "text_language") {
+        v.text_language = VwGraphics::ParseTextLanguage(value);
     } else if (key == "restart_unconfirmed") {
         v.restart_unconfirmed = i != 0;
     }
@@ -141,13 +143,14 @@ void Load() {
     v.startup_render_resolution = v.render_resolution;
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
+    v.startup_text_language = v.text_language;
 }
 
 bool GraphicsNeedRestart() {
     const auto& v = Get();
     return v.render_resolution != v.startup_render_resolution ||
            v.deferred_readback != v.startup_deferred_readback ||
-           v.stale_readback != v.startup_stale_readback;
+           v.stale_readback != v.startup_stale_readback || v.text_language != v.startup_text_language;
 }
 
 // Written beside vw.ini, then renamed over it: a crash or a suspend while writing kept an empty
@@ -176,7 +179,7 @@ void Save() {
                  "display_mode=%s\nvsync=%d\nasync_shaders=%d\n"
                  "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"
                  "render_resolution=%s\ndeferred_readback=%d\nstale_readback=%d\n"
-                 "restart_unconfirmed=%d\n",
+                 "text_language=%s\nrestart_unconfirmed=%d\n",
                  VwGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
@@ -184,6 +187,9 @@ void Save() {
                                                       int(VwGraphics::Resolutions.size()) - 1)]
                      .data(),
                  int(v.deferred_readback.load()), int(v.stale_readback.load()),
+                 VwGraphics::TextLanguages[std::clamp(v.text_language.load(), 0,
+                                                        int(VwGraphics::TextLanguages.size()) - 1)]
+                     .data(),
                  int(v.restart_unconfirmed.load()));
     {
         std::scoped_lock lock{text_mutex};
@@ -216,14 +222,19 @@ namespace G = VwGraphics;
 
 enum Row {
     Heading, DisplayMode, Vsync, Resolution, Fsr1, Sharpening, SharpeningStrength, ButtonIcons,
-    Overlay, CheckUpdates, RowCount
+    TextLanguage, Overlay, CheckUpdates, RowCount
 };
 
 constexpr const char* DisplayModes[] = {"Windowed", "Borderless", "Fullscreen"};
 constexpr const char* ResolutionNames[] = {"1080p (native)", "720p", "900p", "1800p", "4K"};
 constexpr const char* IconKeys[] = {"auto", "playstation", "xbox", "nintendo"};
 constexpr const char* IconNames[] = {"Auto", "PlayStation", "Xbox", "Nintendo"};
+// The game's fonts have Latin letters but not every script: each name in its own script would
+// show as blanks in some languages.
+constexpr const char* LanguageNames[] = {"Game Default", "Japanese", "Traditional Chinese",
+                                         "Simplified Chinese", "Korean"};
 static_assert(std::size(ResolutionNames) == G::Resolutions.size());
+static_assert(std::size(LanguageNames) == G::TextLanguages.size());
 
 const VwgpuSettingRow Rows[RowCount] = {
     {"PC", nullptr, VWGPU_ROW_SECTION, 0, nullptr, 0, 0, 0, 0, nullptr},
@@ -242,6 +253,9 @@ const VwgpuSettingRow Rows[RowCount] = {
      0, 100, 1, "%.0f%%"},
     {"Button Icons", "The button icons in prompts.\nAuto follows the controller in use.", VWGPU_ROW_CHOICE,
      int(std::size(IconNames)), IconNames, 0, 0, 0, 0, nullptr},
+    {"Text Language",
+     "The language of the game's text. Korean needs Unicorn_KO.CPK.\nTakes effect the next time the game starts.",
+     VWGPU_ROW_CHOICE, int(std::size(LanguageNames)), LanguageNames, 0, 0, 0, 0, nullptr},
     {"Performance Overlay",
      "Shows the frame rate and other measurements in a corner.\nMore settings: Insert or R3+L2.", VWGPU_ROW_SWITCH, 0,
      nullptr, 0, 0, 0, 0, nullptr},
@@ -274,6 +288,7 @@ extern "C" float vwgpu_setting_value(int row) {
     case Sharpening: return v.rcas ? 1.0f : 0.0f;
     case SharpeningStrength: return float(v.rcas_strength.load());
     case ButtonIcons: return float(IconIndex());
+    case TextLanguage: return float(v.text_language.load());
     case Overlay: return v.show_fps ? 1.0f : 0.0f;
     case CheckUpdates: return v.check_updates ? 1.0f : 0.0f;
     default: return 0.0f;
@@ -295,6 +310,7 @@ extern "C" void vwgpu_setting_set(int row, float value) {
     case Sharpening: v.rcas = i != 0; break;
     case SharpeningStrength: v.rcas_strength = std::clamp(i, int(r.min), int(r.max)); break;
     case ButtonIcons: VwSettings::SetText("button_icons", choice ? IconKeys[choice] : ""); break;
+    case TextLanguage: v.text_language = choice; break;
     case Overlay: v.show_fps = i != 0; break;
     case CheckUpdates: v.check_updates = i != 0; break;
     }

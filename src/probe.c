@@ -559,6 +559,80 @@ static void install_unicorn_native_settings(const char *app0) {
     printf("Options: %u PC rows added to System > Options\n", native_settings.count);
 }
 
+/* Unicorn Overlord: the text language (text_language= in vw.ini, VW_TEXT_LANGUAGE; the menu's
+ * "Text language"). After its system language query the game stores its language at 0x233e34:
+ * 9 (Korean) gives 6, 10 (Traditional Chinese) 7, 11 (Simplified Chinese) 8, any other 7, and it
+ * then binds that language's CPK (6 Unicorn_KO, 7 Unicorn_TW, 8 Unicorn_CN). So an English or
+ * Japanese system got Chinese text. 0 binds none: the Japanese text in Unicorn.CPK. */
+#define UNICORN_TEXT_LANGUAGE_OFFSET 0x233e34
+/* lea ecx, [rax-9]; add eax, -3; mov edx, 7; cmp ecx, 3; cmovb edx, eax */
+static const unsigned char unicorn_text_language_signature[] = {
+    0x8d, 0x48, 0xf7, 0x83, 0xc0, 0xfd, 0xba, 0x07, 0x00, 0x00, 0x00, 0x83, 0xf9, 0x03, 0x0f, 0x42, 0xd0};
+
+/* The game's language for a TextLanguages key (gpu/shim/vw_graphics.h), -1 for auto. */
+static int unicorn_text_language_value(const char *text) {
+    static const struct { const char *key; int value; } languages[] = {
+        {"japanese", 0}, {"traditional_chinese", 7}, {"simplified_chinese", 8}, {"korean", 6}};
+    char key[32] = "";
+    while (*text == ' ' || *text == '\t') ++text;
+    size_t n = 0;
+    while (n + 1 < sizeof(key) && text[n] && !strchr(" \t\r\n", text[n])) { key[n] = text[n]; ++n; }
+    key[n] = 0;
+    for (size_t i = 0; i < sizeof(languages) / sizeof(*languages); ++i)
+        if (!strcmp(key, languages[i].key)) return languages[i].value;
+    return -1;
+}
+
+static int unicorn_text_language_setting(void) {
+    const char *env = getenv("VW_TEXT_LANGUAGE");
+    if (env && *env) return unicorn_text_language_value(env);
+    const char *config = getenv("VW_CONFIG");
+    FILE *f = config ? fopen(config, "r") : NULL;
+    int value = -1;
+    char line[256];
+    while (f && fgets(line, sizeof(line), f))
+        if (!strncmp(line, "text_language=", 14)) value = unicorn_text_language_value(line + 14);
+    if (f) fclose(f);
+    return value;
+}
+
+static void install_unicorn_text_language(const char *app0) {
+    char path[4096], serial[32] = "", version[32] = "";
+    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
+    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
+    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
+    if (strcmp(serial, "CUSA36381") || strcmp(version, "01.04")) return;
+    const int language = unicorn_text_language_setting();
+    if (language < 0) return;
+    static const char *const names[] = {"Japanese", "", "", "", "", "", "Korean", "Traditional Chinese",
+                                        "Simplified Chinese"};
+    if (language == 6) {
+        /* The game opens it by this name; file names are matched without case. */
+        snprintf(path, sizeof(path), "%s/Unicorn_KO.CPK", app0 ? app0 : ".");
+        FILE *ko = fopen(path, "rb");
+        if (!ko) {
+            snprintf(path, sizeof(path), "%s/Unicorn_KO.cpk", app0 ? app0 : ".");
+            ko = fopen(path, "rb");
+        }
+        if (!ko) {
+            printf("Text language: Korean needs Unicorn_KO.CPK, which this game folder lacks; the game's default\n");
+            return;
+        }
+        fclose(ko);
+    }
+    const uint64_t at = UNICORN_TEXT_LANGUAGE_OFFSET;
+    if (memcmp(image + at, unicorn_text_language_signature, sizeof(unicorn_text_language_signature))) {
+        printf("Text language: the game differs from v01.04 here; the game's default\n");
+        return;
+    }
+    /* mov edx, language; then nops up to the store */
+    memset(image + at, 0x90, sizeof(unicorn_text_language_signature));
+    image[at] = 0xba;
+    const uint32_t value = (uint32_t)language;
+    memcpy(image + at + 1, &value, 4);
+    printf("Text language: %s\n", names[language]);
+}
+
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -884,6 +958,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_unicorn_render_scale(app0);
     install_unicorn_cri_hook(app0, segments, ns);
     if (gpu_enabled) install_unicorn_native_settings(app0);
+    install_unicorn_text_language(app0);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif

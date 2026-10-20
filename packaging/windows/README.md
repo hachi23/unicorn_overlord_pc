@@ -2,7 +2,7 @@
 
 The ports build and run natively on 64-bit Windows 10 (1903+) / 11 from the same sources as on
 Linux, with the MSYS2 CLANG64 toolchain. The static-library build (2026-10-13) has only been run
-on Linux so far: report the first error of `out/deps/<library>.log` or `out/gpu-build.log`.
+on Linux so far: report the first error of `out/deps/<library>.log` or `out/gpu-build.log` (`out/gpu-static-build.log` for the release build).
 
 ## Build and package
 

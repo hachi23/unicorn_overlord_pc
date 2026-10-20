@@ -5,52 +5,64 @@ Read this first. The port's history and reverse-engineering notes are in
 Development moves to the Windows desktop (7800X3D, RX 9070 XT) from here; build there with
 MSYS2 CLANG64 ([../../packaging/windows/README.md](../../packaging/windows/README.md)).
 
-## Open work for the next agent (2026-10-20)
+## Open work for the next agent (2026-10-20, evening)
 
-In order:
+v1.2.0 is released (#23 NVIDIA pipeline-binary crash, #24 Windows audio downmix). In order:
 
-1. **Pull request #23** (branch `claude/nvidia-pipeline-binary`, fixes issue #21): the game
-   crashed at start on an NVIDIA RTX 4050 laptop (Windows 11, driver 610.88). The log's fault
-   `vwport.exe+0x6fba49` resolves with the v1.0.0 Windows symbols to `Instance::CreateDevice`,
-   the instruction after `vkGetPipelineKeyKHR(device, NULL, &key)`: the callee-saved `rdi`
-   came back as 1 and the stack held text, so the stack was overwritten inside the driver.
-   The PR leaves `VK_KHR_pipeline_binary` off on `eNvidiaProprietary`, and
-   `VW_PIPELINE_BINARIES=0` now turns it off at device creation too. Checked on AMD/Linux with
-   the extension off (battle map loads); not on NVIDIA. Merge after its Linux and Windows
-   checks, and ask the reporter on #21 for a new log.
-2. **Audio is too quiet (owner's report: low even with every volume at 100%).** Not fixed.
-   Findings so far:
-   - The game opens one audio port: 8 channels, float, 256 frames (`src/runtime_audio.c`).
-     A 66 s dump of the boot and opening (`VW_AUDIO_DUMP=<prefix>`) has nearly everything in
-     front L/R (RMS about -31 dBFS, peaks about -11 dBFS); center and LFE are silent, the
-     surrounds about 27 dB lower.
-   - The runtime hands those 8 channels to SDL unchanged. When SDL itself downmixes 7.1 to
-     stereo (`SDL_Convert71ToStereo`, SDL 3.4.18) it keeps 0.212 of FL/FR: -13.5 dB.
-   - On Linux (PipeWire, stereo sink) the recorded output of the sink monitor peaks at
-     -12 dBFS, as loud as the game's own mix: there SDL seems to open the device with 8
-     channels and PipeWire downmixes at unity. Not confirmed (a debug print of
-     `SDL_GetAudioDeviceFormat` was started, then stopped when work moved to Windows).
-   - Hypothesis to check first on Windows: WASAPI's stereo endpoint makes SDL do the
-     downmix, so Windows plays about 13.5 dB too quiet. Print the device format at port open
-     (`SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(stream), ...)`), and record the
-     output level with and without a fix.
-   - Fix if confirmed: when the device has fewer than 6 channels, downmix in
-     `output_port()` before `SDL_PutAudioStreamData` (L = FL + 0.707 C + 0.707 SL + 0.707 BL,
-     R likewise, LFE dropped, clamp to [-1, 1]) and open the stream with 2 channels. The
-     queue-level control and the silence padding in `output_port()` use `bytes`: switch them
-     to the size actually sent. Check for clipping in loud scenes (battles).
-3. **Review for NVIDIA.** The owner asked for a pass over NVIDIA-specific risks, comparing
-   with upstream shadPS4 and other emulators' NVIDIA workarounds: extensions the port uses
-   that NVIDIA lacks (the #21 log lists `VK_EXT_shader_stencil_export`,
-   `VK_AMD_shader_image_load_store_lod`, `VK_EXT_shader_atomic_float2` and AMD extensions as
-   unavailable), driver-ID branches in `vk_instance.cpp`, and the pipeline cache path.
-4. **Play test, then v1.2.0.** Play on Windows: first-start setup, title, New Game opening,
-   Continue into the Palevia battle, System > Options PC rows, Insert menu with Apply and
-   restart (1080p to 900p and back), save and load, Change game folder. Then merge, tag
-   `v1.2.0` on the merge commit (`git tag -a`, the message is the release notes) and push the
-   tag ([../RELEASING.md](../RELEASING.md)).
-5. **Issue #14:** asked the reporter (2026-10-20) for a run log with Xbox icons set; the
-   icons work with our dump. Their log will show `Button icons:` or `Render scale:` lines.
+1. **Pull request #27** (branch `claude/text-language`): test, then merge. It holds:
+   - **Text Language** (`text_language=` in vw.ini, `VW_TEXT_LANGUAGE`): a row in System >
+     Options (PC) and in the Insert menu (Overlay tab), applied on restart. The probe replaces
+     the game's choice at `0x233e34` (checked bytes; `src/probe.c`
+     `install_unicorn_text_language`). Game values: 0 Japanese (no language CPK: the base
+     text in `Unicorn.CPK`), 6 Korean, 7 Traditional, 8 Simplified Chinese.
+   - **Setup asks which dump** (`launcher/vw_launcher.py` `choose_dump`, `detect_dump`): the
+     Asia version with the fan English patch, or the official Asia version, each with its
+     caveats; the official one picks its text language. The folder is checked against the
+     choice (the English patch has one English file in both `Unicorn_CN.CPK` and
+     `Unicorn_TW.CPK`).
+   - Insert menu title "PC settings" when the game's title is not Latin text (showed boxes).
+   - `build.sh --static` on Windows builds in `out/gpu-static`: sharing `out/gpu` with the
+     development build kept MSYS2's shared FFmpeg from the cache ("unable to find library
+     -ldl"). The local release build works again (`packaging/windows/build.sh`; if `py` is
+     not found inside MSYS2, run `py -3 packaging/package.py unicorn` from a normal shell
+     with `clang64/bin` on `PATH`).
+   - Docs: KNOWN_ISSUES (both dumps, text language, no Korean), TROUBLESHOOTING (base game
+     is app 01.00).
+   Checked on Windows with the official Asia dump: Options in Japanese and in Simplified
+   Chinese, default Traditional Chinese, Korean falls back with a log line, the PC row shows.
+   Not checked: a full first-time setup through the new window, Japanese past the menus
+   (story text, fonts), the English-patch dump with the new build.
+   **Packaging deletes `dist/<Title> PC/` including `data/`**: move `data/` aside first
+   (done by hand on 2026-10-20) or teach `package.py` to keep it.
+2. **Findings behind #27** (also in KNOWN_ISSUES):
+   - The fan English patch keeps the official `eboot.bin` and `sce_module` (same SHA-256),
+     and `Unicorn.CPK`/`UnicornPatch.CPK` are byte-identical. It replaces only
+     `Unicorn_CN/TW.CPK` (one English file in both: 32 MsgSheets + `GUI/Interface.mbs`, no
+     `Help/*.ftx`, so 14 tutorial pictures fall back to the base ones), `param.sfo` and
+     package metadata.
+   - Language choice (eboot `0x233e2f`): system language 9 → KO, 10 → TW, 11 → CN, anything
+     else → TW; the port reports 1 (English), hence Chinese on the official dump. Table of
+     CPK names at `0x140c610` (US FR ES DE IT KO TW CN; the Asia build only reaches 6..8).
+   - No Korean text in the Asia release: base 01.00 and the 1.04 update ship only CN/TW text
+     (Korean fonts are there). A `Unicorn_KO.CPK` from the Korean release should load
+     (untested).
+3. **Issue #14** (reporter: resolution and button icons do nothing): their log has all three
+   code hooks failing (`Render scale: unavailable (code signature)`, `Button icons: the
+   game's decompressor is not where v01.04 has it`, `Options: the game differs`) and maps
+   47,530,584 bytes with 89,798 relocations, against 47,071,832 / 90,011 for both of our
+   dumps. Their `eboot.bin` is a third build. Not yet asked: its SHA-256 (`certutil -hashfile
+   eboot.bin SHA256`; ours `de8e4970ae6ab39278bd61cd7818d7844adf934e1909e1356476a28d239414c4`)
+   and how they merged the update. Their screenshots are official Asia (Chinese UI), so after
+   #27 they can also pick Japanese or stay on Chinese; English needs the patch.
+4. **Setup should hash-check `eboot.bin`** (proposed, not started): `check_game` only reads
+   `param.sfo`, so an executable like #14's passes and silently loses the PC features. Reject
+   or warn with a clear message, and log the hash.
+5. **Windowed mode** (asked, not started): the window is already resizable
+   (`gpu/shim/window.cpp`, the swapchain follows), but it opens at 1920x1080, so on a 1080p
+   screen the edges are off-screen. Fit the first size to the display's usable area (16:9)
+   and remember size and position in vw.ini.
+6. Update this list and the PR #24 handoff items (NVIDIA static review, risks 1-4) into
+   "Next steps" once #27 is merged.
 
 ### What landed on 2026-10-20 (v1.1.0, pull request #22)
 

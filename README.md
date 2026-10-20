@@ -7,7 +7,7 @@ A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlo
 
 | Dump | State |
 |---|---|
-| CUSA36381 (Asia), app 01.04 (base game with the 1.04 English update) | Prologue, chapter 1 and its first battle played; saving and loading work; every system function the game imports is implemented |
+| CUSA36381 (Asia), app 01.04 (base game with the 1.04 update; Japanese, Chinese or, with the fan English patch, English text) | Prologue, chapter 1 and its first battle played; saving and loading work; every system function the game imports is implemented |
 
 > **Work in progress.** The game has not been played to the end, and it runs at about 50-60 FPS
 > on a mid-range laptop. Read [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) before reporting a bug.

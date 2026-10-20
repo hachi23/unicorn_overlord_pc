@@ -19,7 +19,8 @@ before each start.
 
 - The folder must contain `eboot.bin`, `sce_module/` and `sce_sys/` directly.
 - It must be **CUSA36381 version 01.04**: the base game with the 1.04 update applied on top
-  (update files replace base files). The base game alone is 01.01 and is refused.
+  (update files replace base files). The base game alone is app version 01.00 and is refused. The
+  official Asia version and the fan English patch both work (setup asks which one you have).
 - To choose another folder later: in-game menu (**Insert**) → Overlay → **Change game folder**,
   or start the program with `--choose-game`.
 - Installing needs about 7 GB free in the data directory when the dump is on another drive (on

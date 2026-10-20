@@ -506,6 +506,12 @@ void OverlayTab() {
             std::snprintf(text, sizeof(text), "ready");
         }
         InfoRow("Shader cache", text);
+        static const char* const language_labels[] = {"Game default", "Japanese", "Traditional Chinese",
+                                                      "Simplified Chinese", "Korean (needs Unicorn_KO.CPK)"};
+        static_assert(std::size(language_labels) == VwGraphics::TextLanguages.size());
+        ChoiceRow("Text language (on restart)", s.text_language, language_labels, nullptr,
+                  int(std::size(language_labels)),
+                  "Game default: Traditional Chinese on the Asia version, English with the English patch.");
         CheckRow("Check for updates at start", s.check_updates,
                  "The start program looks for a newer version of the port and asks before downloading.");
         ImGui::EndTable();
@@ -523,7 +529,8 @@ void OverlayTab() {
 int RestartChanges() {
     const auto& s = VwSettings::Get();
     return (s.render_resolution != s.startup_render_resolution) +
-           (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback);
+           (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback) +
+           (s.text_language != s.startup_text_language);
 }
 
 void Menu() {
@@ -536,10 +543,12 @@ void Menu() {
                                     std::min(680.0f * base_scale, viewport->WorkSize.y * 0.9f)),
                              ImGuiCond_Appearing);
     bool keep_open = true;
-    // vw: the game's own title (param.sfo), not a fixed one.
+    // vw: the game's own title (param.sfo), not a fixed one. The menu font has Latin letters
+    // only: the Asia version's Chinese title showed as boxes.
     static const std::string heading = [] {
         const std::string_view title = Common::ElfInfo::Instance().Title();
-        return std::string(title.empty() ? "vwport" : title) + "  (Insert / R3+L2)";
+        const bool latin = std::all_of(title.begin(), title.end(), [](char c) { return (unsigned char)c < 0x80; });
+        return std::string(title.empty() || !latin ? "PC settings" : title) + "  (Insert / R3+L2)";
     }();
     if (!ImGui::Begin(heading.c_str(), &keep_open, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();

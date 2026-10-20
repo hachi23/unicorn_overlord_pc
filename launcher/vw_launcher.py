@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The ports' start program (Windows and Linux): a one-time setup, then straight into the game.
 
-There is no launcher window. The first start asks for the folder of the user's dump (a folder
-dialog), checks that it is the supported game and version, installs it into data/game (hard
+There is no launcher window. The first start asks which dump the user has (a game's `dumps`: for
+Unicorn Overlord the Asia version with or without the fan English patch, each with its caveats and
+text languages; the chosen language goes to vw.ini), then for its folder (a folder dialog),
+checks that it is the supported game and version, installs it into data/game (hard
 links when the dump is on the same drive, otherwise a copy with a progress window; resumable)
 and remembers it in data/launcher.json; every start then prepares the game image (run.py,
 skipped while nothing changed) and runs it. All settings
@@ -47,9 +49,38 @@ WINDOWS = os.name == 'nt'
 GAMES = {
     'unicorn': {
         'title_id': 'CUSA36381', 'app_version': '01.04',
-        'version_hint': 'the base game with the 1.04 update (English patch) applied',
+        'version_hint': 'the base game with the 1.04 update applied',
         'name': 'Unicorn Overlord', 'title': 'Unicorn Overlord', 'run_dir': 'run_uo',
         'colors': {'bg': '#0a1222', 'gold': '#c8a254', 'gold_hi': '#f0d48a'},
+        # Both have the same eboot.bin; the fan English patch replaces the Chinese text files
+        # with one English file in both slots (docs/KNOWN_ISSUES.md). text_language: vw.ini.
+        'dumps': {
+            'english': {
+                'label': 'Asia version with the fan English patch',
+                'caveats': (
+                    'English text (a fan translation). Voices: Japanese or English, in the game\'s '
+                    'Voice Language option.',
+                    'Leave Text Language in the game\'s options on Game Default. Japanese there shows '
+                    'the Japanese text; both Chinese choices also show English.',
+                    'A few tutorial pictures were not translated by the patch and may show Japanese '
+                    'text.',
+                ),
+                'languages': (('auto', 'English'),),
+            },
+            'asia': {
+                'label': 'Asia version (official, no English patch)',
+                'caveats': (
+                    'No English text. Pick the text language below; it can be changed later in '
+                    'System > Options > Text Language (applied at the next start).',
+                    'The Asia version itself never shows its Japanese text; the port switches it on. '
+                    'Tested in the menus so far.',
+                    'Korean is not included in this version. Voices: Japanese or English, in the '
+                    'game\'s Voice Language option.',
+                ),
+                'languages': (('traditional_chinese', 'Traditional Chinese (the game\'s default)'),
+                              ('simplified_chinese', 'Simplified Chinese'), ('japanese', 'Japanese')),
+            },
+        },
     },
 }
 
@@ -107,6 +138,83 @@ def check_game(game_info, folder):
     return True, f'{name}  ·  {title_id}  ·  v{version}'
 
 
+def detect_dump(folder):
+    """'english' when Unicorn_CN.CPK and Unicorn_TW.CPK are the same file (the English patch puts
+    its text in both), else 'asia'. Names are matched without case, as the game does."""
+    import hashlib
+    files = {}
+    try:
+        for entry in Path(folder).iterdir():
+            files[entry.name.lower()] = entry
+    except OSError:
+        return 'asia'
+    cn, tw = files.get('unicorn_cn.cpk'), files.get('unicorn_tw.cpk')
+    try:
+        if not cn or not tw or cn.stat().st_size != tw.stat().st_size:
+            return 'asia'
+        digests = [hashlib.sha256(path.read_bytes()).digest() for path in (cn, tw)]
+    except OSError:
+        return 'asia'
+    return 'english' if digests[0] == digests[1] else 'asia'
+
+
+def choose_dump(game_info, root, kind=None, language=None):
+    """The setup window: which dump the user has, its caveats and (Asia) the text language.
+    (kind, text_language) or None when cancelled."""
+    import tkinter as tk
+    from tkinter import ttk
+    dumps = game_info['dumps']
+    kind_var = tk.StringVar(value=kind if kind in dumps else next(iter(dumps)))
+    language_var = tk.StringVar()
+    result = {}
+    window = tk.Toplevel(root)
+    window.title(f"{game_info['name']}: setup")
+    window.resizable(False, False)
+    window.attributes('-topmost', True)
+    body = ttk.Frame(window, padding=16)
+    body.pack(fill='both')
+    ttk.Label(body, wraplength=520,
+              text=f"Which {game_info['name']} dump do you have? Both are {game_info['title_id']} "
+                   f"version {game_info['app_version']} ({game_info['version_hint']}), from your "
+                   'own console.').pack(anchor='w')
+    for key, dump in dumps.items():
+        ttk.Radiobutton(body, text=dump['label'], value=key, variable=kind_var,
+                        command=lambda: refresh()).pack(anchor='w', pady=(8, 0))
+    caveats = ttk.Label(body, wraplength=520, justify='left')
+    caveats.pack(anchor='w', pady=(10, 4))
+    row = ttk.Frame(body)
+    row.pack(anchor='w', pady=(4, 0))
+    ttk.Label(row, text='Text language').pack(side='left')
+    languages = ttk.Combobox(row, textvariable=language_var, state='readonly', width=36)
+    languages.pack(side='left', padx=8)
+
+    def refresh():
+        dump = dumps[kind_var.get()]
+        caveats.configure(text='\n'.join(f'•  {line}' for line in dump['caveats']))
+        names = [name for _, name in dump['languages']]
+        languages.configure(values=names, state='readonly' if len(names) > 1 else 'disabled')
+        keys = [key for key, _ in dump['languages']]
+        language_var.set(names[keys.index(language)] if language in keys else names[0])
+
+    def done(ok):
+        if ok:
+            dump = dumps[kind_var.get()]
+            result['value'] = (kind_var.get(), next(key for key, name in dump['languages']
+                                                   if name == language_var.get()))
+        window.destroy()
+    buttons = ttk.Frame(body)
+    buttons.pack(fill='x', pady=(14, 0))
+    ttk.Button(buttons, text='Choose the game folder…', command=lambda: done(True)).pack(side='left')
+    ttk.Button(buttons, text='Cancel', command=lambda: done(False)).pack(side='right')
+    ttk.Label(body, wraplength=520, foreground='#666',
+              text='Later starts go straight into the game; the settings are in the in-game menu '
+                   '(Insert, or R3+L2 on a controller).').pack(anchor='w', pady=(12, 0))
+    window.protocol('WM_DELETE_WINDOW', lambda: done(False))
+    refresh()
+    window.wait_window()
+    return result.get('value')
+
+
 def tk_root():
     """A hidden Tk root for the dialogs (no launcher window)."""
     import tkinter as tk
@@ -116,19 +224,26 @@ def tk_root():
     return root
 
 
-def choose_game(game_info, start):
-    """Asks for the dump folder until a supported one is chosen; None when cancelled."""
+def choose_game(game_info, start, dump=None, language=None):
+    """Asks for the dump folder until a supported one is chosen: (folder, dump kind, text
+    language), the kind and language None for a game without `dumps`; None when cancelled."""
     from tkinter import filedialog, messagebox
     root = tk_root()
     try:
-        messagebox.showinfo(f"{game_info['name']}: setup",
-                            f"Choose the folder of your own {game_info['name']} dump:\n\n"
-                            f"{game_info['title_id']} version {game_info['app_version']} "
-                            f"({game_info['version_hint']}).\n\n"
-                            'It is the folder that contains eboot.bin, sce_module and sce_sys. It is '
-                            'checked and prepared once, then the game starts. Later starts go straight '
-                            'into the game; the settings are in the in-game menu (Insert, or R3+L2 on a '
-                            'controller).', parent=root)
+        if game_info.get('dumps'):
+            chosen = choose_dump(game_info, root, dump, language)
+            if not chosen:
+                return None
+            dump, language = chosen
+        else:
+            messagebox.showinfo(f"{game_info['name']}: setup",
+                                f"Choose the folder of your own {game_info['name']} dump:\n\n"
+                                f"{game_info['title_id']} version {game_info['app_version']} "
+                                f"({game_info['version_hint']}).\n\n"
+                                'It is the folder that contains eboot.bin, sce_module and sce_sys. It is '
+                                'checked and prepared once, then the game starts. Later starts go straight '
+                                'into the game; the settings are in the in-game menu (Insert, or R3+L2 on a '
+                                'controller).', parent=root)
         folder = start
         while True:
             folder = filedialog.askdirectory(parent=root, title=f"The {game_info['title_id']} folder "
@@ -137,8 +252,23 @@ def choose_game(game_info, start):
             if not folder:
                 return None
             ok, message = check_game(game_info, folder)
+            if ok and dump:
+                found = detect_dump(folder)
+                if found != dump:
+                    dumps = game_info['dumps']
+                    if messagebox.askyesno(f"{game_info['name']}: setup",
+                                           f"This folder is the {dumps[found]['label']}, not the "
+                                           f"{dumps[dump]['label']}.\n\nUse it as the "
+                                           f"{dumps[found]['label']}?", parent=root):
+                        chosen = choose_dump(game_info, root, found)
+                        if not chosen:
+                            return None
+                        dump, language = chosen
+                        if chosen[0] == found:
+                            return folder, dump, language
+                    continue
             if ok:
-                return folder
+                return folder, dump, language
             if not messagebox.askretrycancel(f"{game_info['name']}: setup", message, parent=root):
                 return None
     finally:
@@ -568,10 +698,17 @@ def main(key):
     settings = load_settings(data)
     folder = settings.get('game_dir')
     if '--choose-game' in args or not check_game(game_info, folder)[0]:
-        folder = choose_game(game_info, settings.get('source_dir', folder))
-        if not folder:
+        chosen = choose_game(game_info, settings.get('source_dir', folder), settings.get('dump'),
+                             settings.get('text_language'))
+        if not chosen:
             sys.exit(0)
+        folder, dump, language = chosen
         settings['source_dir'] = folder
+        if dump:
+            import graphics_options
+            settings.update(dump=dump, text_language=language)
+            data.mkdir(parents=True, exist_ok=True)
+            graphics_options.write_keys(data / 'vw.ini', {'text_language': language})
         if os.environ.get('VW_INSTALL', '1') != '0' and Path(folder).resolve() != (data / 'game').resolve():
             installed = install_game(game_info, folder, data)
             if not installed:

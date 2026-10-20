@@ -24,9 +24,23 @@ Results from other hardware are welcome in the issues.
 
 ## Supported dump only
 
-Only **CUSA36381 (Asia) version 01.04**: the base game with the 1.04 update (English) merged on
-top. The start program refuses other regions (US, EU, Japan) and other versions; they have
-different executables and the port's code hooks would not match.
+Only **CUSA36381 (Asia) version 01.04**: the base game with the 1.04 update merged on
+top. The fan English patch only replaces the text files (`Unicorn_CN.CPK`, `Unicorn_TW.CPK`) and
+`param.sfo`; its `eboot.bin` is the official one, so both work.
+
+Text language: the game picks it from the PS4 system language, and on any language but Korean or
+Chinese it shows Traditional Chinese (English with the English patch). **Text Language** in
+System > Options (or the Insert menu) picks Japanese, Traditional or Simplified Chinese at the next
+start. Voice language is the game's own Voice Language option.
+
+Korean: the Asia release has no Korean text. Its base game (01.00) and the 1.04 update both ship
+only `Unicorn_CN.CPK` and `Unicorn_TW.CPK`, plus the Japanese text in `Unicorn.CPK`; the Korean
+fonts (`Font_4K/*_KO*.ftx`) are there, a Korean text file is not. The executable would load
+`Unicorn_KO.CPK` (Text Language: Korean) if one is put in the game folder; it is probably part of
+the separate Korean release (untested). Without it, Korean falls back to the game's default.
+
+The start program refuses other regions (US, EU, Japan) and other versions; they have different
+executables and the port's code hooks would not match.
 
 ## Performance
 

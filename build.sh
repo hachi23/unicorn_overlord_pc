@@ -16,20 +16,24 @@ MINGW*|MSYS*)
     fi
     # --static (packaging): FFmpeg, SDL3 and the others from packaging/deps.sh, linked in.
     deps=
+    # Its own build folder: CMake keeps the pkg-config results of the first configure, so a
+    # static build in the development folder linked MSYS2's shared FFmpeg (and its -ldl).
+    build=out/gpu
     if [[ ${1:-} == --static ]]; then
         bash packaging/deps.sh
         deps=$(cygpath -m "$PWD/out/deps/prefix")
         # pkg-config must find these, not MSYS2's shared FFmpeg/SDL3 (';' separated).
         export PKG_CONFIG_PATH="$deps/lib/pkgconfig;$deps/share/pkgconfig"
+        build=out/gpu-static
     fi
-    cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DVW_PGO=off \
+    cmake -S gpu -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DVW_PGO=off \
         -DVW_LTO="${VW_LTO:-OFF}" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DVW_DEPS="$deps" >/dev/null
     echo "GPU library and loader: LTO ${VW_LTO:-OFF}"
-    if ! ninja -C out/gpu vwport > out/gpu-build.log 2>&1; then
-        grep -v '^[[]' out/gpu-build.log | tail -40 >&2
-        echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
+    if ! ninja -C "$build" vwport > "$build-build.log" 2>&1; then
+        grep -v '^[[]' "$build-build.log" | tail -40 >&2
+        echo "Build failed (full log: $build-build.log)" >&2; exit 1
     fi
-    cp out/gpu/vwport.exe out/
+    cp "$build/vwport.exe" out/
     echo "Built $PWD/out/vwport.exe"
     exit 0
     ;;

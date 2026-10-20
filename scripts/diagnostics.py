@@ -11,10 +11,11 @@ import zipfile
 LAUNCH_KEYS = ('VW_PATCHES', 'VW_PATCHES_ONLY', 'VW_RENDER_SCALE', 'VW_NEO_MODE',
                'VW_VBLANK_HZ', 'VW_DMEM_MB', 'VW_DEFERRED_READBACK', 'VW_STALE_READBACK',
                'VW_ASYNC_SHADERS', 'VW_GPU_LOG', 'VW_HANG_DUMP', 'VW_MODS_ENABLED',
-               'VW_FSR1', 'VW_RCAS', 'VW_FRAMES_AHEAD', 'VW_FPS_LIMIT')
+               'VW_FSR1', 'VW_RCAS', 'VW_FRAMES_AHEAD', 'VW_FPS_LIMIT', 'VW_TEXT_LANGUAGE')
 SETTING_KEYS = ('render_resolution', 'deferred_readback', 'stale_readback', 'async_shaders',
                 'display_mode', 'vsync', 'fsr1', 'rcas', 'rcas_strength',
-                'frames_queued', 'show_fps', 'overlay_fps', 'overlay_frametime', 'overlay_scale')
+                'frames_queued', 'show_fps', 'overlay_fps', 'overlay_frametime', 'overlay_scale',
+                'text_language', 'button_icons')
 
 
 def system_info():

@@ -37,10 +37,12 @@ struct Values {
     std::atomic<int> render_resolution{0};
     std::atomic<bool> deferred_readback{true};
     std::atomic<bool> stale_readback{true};
+    /// Index into VwGraphics::TextLanguages; the probe reads text_language= itself.
+    std::atomic<int> text_language{0};
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
-    int startup_render_resolution = 0;
+    int startup_render_resolution = 0, startup_text_language = 0;
     bool startup_deferred_readback = true, startup_stale_readback = true;
 };
 
@@ -52,7 +54,7 @@ void SetText(const std::string& key, const std::string& value);
 
 /// Reads the file, then the environment overrides. Called once at start.
 void Load();
-/// A startup graphics option differs from the one this launch started with.
+/// A startup option (graphics, text language) differs from the one this launch started with.
 bool GraphicsNeedRestart();
 /// Writes the file (menu changes).
 void Save();
