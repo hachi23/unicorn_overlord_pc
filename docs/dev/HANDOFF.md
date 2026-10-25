@@ -5,6 +5,13 @@ Read this first. The port's history and reverse-engineering notes are in
 Development moves to the Windows desktop (7800X3D, RX 9070 XT) from here; build there with
 MSYS2 CLANG64 ([../../packaging/windows/README.md](../../packaging/windows/README.md)).
 
+## Current task (2026-10-26): issue #34, dialogue shows only "–"
+
+Read [ISSUE_34.md](ISSUE_34.md) and continue there: findings so far, how to import the
+reporters' saves (`tools/import_save.py`), how to drive the game without focus
+(`tools/uo_pad.ps1`), and the next steps. Then the open issues in order: #28 stick drift,
+#29 21:9, #33 Hong Kong 1.05, #32 Anime4K, #14. The list below is still open too.
+
 ## Open work for the next agent (2026-10-20, evening)
 
 v1.2.0 is released (#23 NVIDIA pipeline-binary crash, #24 Windows audio downmix). In order:
