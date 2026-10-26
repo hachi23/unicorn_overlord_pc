@@ -1,82 +1,105 @@
-# Handoff (2026-10-20)
+# Handoff (2026-10-27)
 
 Read this first. The port's history and reverse-engineering notes are in
 [unicorn/HANDOFF.md](unicorn/HANDOFF.md), the GPU pipeline in [parallel_gpu.md](parallel_gpu.md).
-Development moves to the Windows desktop (7800X3D, RX 9070 XT) from here; build there with
-MSYS2 CLANG64 ([../../packaging/windows/README.md](../../packaging/windows/README.md)).
+Development moves to the Windows desktop (7800X3D, RX 9070 XT) again; build there with MSYS2
+CLANG64 ([../../packaging/windows/README.md](../../packaging/windows/README.md)). The Linux
+laptop session that wrote this did everything below on Linux only.
 
-## Open work for the next agent (2026-10-20)
+## Where things stand
 
-In order:
+**v1.3.0 is released** (tag on `ae192a9`, 2026-10-27): CI built and published it. It was played
+on Linux (the laptop) but **not on Windows**. The release steps ask for a Windows play test
+([../RELEASING.md](../RELEASING.md)), so do that first (list below).
 
-1. **Pull request #23** (branch `claude/nvidia-pipeline-binary`, fixes issue #21): the game
-   crashed at start on an NVIDIA RTX 4050 laptop (Windows 11, driver 610.88). The log's fault
-   `vwport.exe+0x6fba49` resolves with the v1.0.0 Windows symbols to `Instance::CreateDevice`,
-   the instruction after `vkGetPipelineKeyKHR(device, NULL, &key)`: the callee-saved `rdi`
-   came back as 1 and the stack held text, so the stack was overwritten inside the driver.
-   The PR leaves `VK_KHR_pipeline_binary` off on `eNvidiaProprietary`, and
-   `VW_PIPELINE_BINARIES=0` now turns it off at device creation too. Checked on AMD/Linux with
-   the extension off (battle map loads); not on NVIDIA. Merge after its Linux and Windows
-   checks, and ask the reporter on #21 for a new log.
-2. **Audio is too quiet (owner's report: low even with every volume at 100%).** Not fixed.
-   Findings so far:
-   - The game opens one audio port: 8 channels, float, 256 frames (`src/runtime_audio.c`).
-     A 66 s dump of the boot and opening (`VW_AUDIO_DUMP=<prefix>`) has nearly everything in
-     front L/R (RMS about -31 dBFS, peaks about -11 dBFS); center and LFE are silent, the
-     surrounds about 27 dB lower.
-   - The runtime hands those 8 channels to SDL unchanged. When SDL itself downmixes 7.1 to
-     stereo (`SDL_Convert71ToStereo`, SDL 3.4.18) it keeps 0.212 of FL/FR: -13.5 dB.
-   - On Linux (PipeWire, stereo sink) the recorded output of the sink monitor peaks at
-     -12 dBFS, as loud as the game's own mix: there SDL seems to open the device with 8
-     channels and PipeWire downmixes at unity. Not confirmed (a debug print of
-     `SDL_GetAudioDeviceFormat` was started, then stopped when work moved to Windows).
-   - Hypothesis to check first on Windows: WASAPI's stereo endpoint makes SDL do the
-     downmix, so Windows plays about 13.5 dB too quiet. Print the device format at port open
-     (`SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(stream), ...)`), and record the
-     output level with and without a fix.
-   - Fix if confirmed: when the device has fewer than 6 channels, downmix in
-     `output_port()` before `SDL_PutAudioStreamData` (L = FL + 0.707 C + 0.707 SL + 0.707 BL,
-     R likewise, LFE dropped, clamp to [-1, 1]) and open the stream with 2 channels. The
-     queue-level control and the silence padding in `output_port()` use `bytes`: switch them
-     to the size actually sent. Check for clipping in loud scenes (battles).
-3. **Review for NVIDIA.** The owner asked for a pass over NVIDIA-specific risks, comparing
-   with upstream shadPS4 and other emulators' NVIDIA workarounds: extensions the port uses
-   that NVIDIA lacks (the #21 log lists `VK_EXT_shader_stencil_export`,
-   `VK_AMD_shader_image_load_store_lod`, `VK_EXT_shader_atomic_float2` and AMD extensions as
-   unavailable), driver-ID branches in `vk_instance.cpp`, and the pipeline cache path.
-4. **Play test, then v1.2.0.** Play on Windows: first-start setup, title, New Game opening,
-   Continue into the Palevia battle, System > Options PC rows, Insert menu with Apply and
-   restart (1080p to 900p and back), save and load, Change game folder. Then merge, tag
-   `v1.2.0` on the merge commit (`git tag -a`, the message is the release notes) and push the
-   tag ([../RELEASING.md](../RELEASING.md)).
-5. **Issue #14:** asked the reporter (2026-10-20) for a run log with Xbox icons set; the
-   icons work with our dump. Their log will show `Button icons:` or `Render scale:` lines.
+What went into v1.3.0:
 
-### What landed on 2026-10-20 (v1.1.0, pull request #22)
-
-| Change | Where | Checked |
+| PR | Change | Checked on Linux |
 |---|---|---|
-| AppImage crashed on Wayland (Steam Deck game mode, Plasma): children inherited PyInstaller's `LD_LIBRARY_PATH` and its old Vulkan loader (`vkCreateWaylandSurfaceKHR` null) | `launcher/vw_launcher.py` (`restore_library_path`) | v1.0.0 crashes under gamescope 1280x800; v1.1.0 release AppImage runs there |
-| Apply and restart closed the game (exit 23): descriptors closed before `execl` while the GPU thread ran | `src/probe.c` (`runtime_restart_with`, close-on-exec) | restarts in about 1 s |
-| 900p then 1080p rendered at 4K: the restart inherited `VW_NEO_MODE`/`VW_INTERNAL_*` | `src/probe.c` (`forget_render_scale_env`) | 1080p to 900p shows 1600x900, back shows 1920x1080 |
-| Signature mismatch rendered 900p at 4K | `src/probe.c` (check before the Pro path) | forced mismatch: 1920x1080 buffers |
-| Change game folder waited 30 s on Linux (own pid) | `launcher/vw_launcher.py` (`wait_for`) | 30.1 s to 0.0 s |
-| `vw.ini`/`launcher.json` emptied by a crash mid-write | `gpu/shim/vw_settings.cpp`, `launcher/vw_launcher.py` | in-game change saved, no `.tmp` left |
-| Restarts pushed good save backups out | `scripts/save_backup.py` | failing test first, 113 Python tests |
+| #44 | CI: Windows job exited 127 on every PR. `msys2-env.sh` put the runner's own older `C:/msys64` first on PATH inside a CLANG64 shell, so `build.sh` ran `deps.sh` with another MSYS2's bash. It now adds `C:/msys64` only outside CLANG64. | Windows CI green |
+| #36 | Story dialogue, backlog and rapport text showed "–" (#34): the Options-row text hook took every id from `0x40000` as the port's own; the story sheet has 489,999 ids. Port ids now start at `0x100000`. | New Game through the tutorial battle: Josef/Alain on the horse and the Valmore/Baltro throne room show text (the scenes reporters listed) |
+| #37 | Ultrawide 21:9 / 32:9, Hor+ (#29). **Marked experimental** (menus, README, KNOWN_ISSUES); "Ultrawide report" issue template; the log prints `Aspect ratio: <ratio> (<w>x<h>), experimental`. Nobody has tried a real ultrawide monitor. | 16:9 unchanged; unit test |
+| #38 | Stick dead zone 15% (0–40%) (#28); Check for Updates row removed from the game's Options screen (it holds 11 PC rows, ids 21..31, all used now). | settings test |
+| #39 | Windows: guest memory failure (error 1450, "Error 3", #35) stops with a message; launcher offers to end a leftover `vwport.exe`. | tests only (Windows code) |
+| #40 | Setup warns when `eboot.bin` is another build of v01.04 (#14's reporter). | tests |
+| #43 | Anime4K restore/upscale (#32), Insert menu → Image. | Polaris: Fast 3.3 ms, Quality 7.5 ms at 1080p |
+| #46 | Xbox icons: Cross showed **B**, Circle **A** (#41). In `Interface_Button.mbs` `BUTTON_A_3`/`BUTTON_B_3` draw their own letter while the groups are named by Switch position; A/B now take each other's Xbox icon. X/Y were already right (Square shows X; swapping them too was wrong, seen in Options). | battle map: Cross prompt green A, Circle (Paused) red B |
 
-v1.1.0 is published (tag on `69feb5b`); the Windows zip of it was only checked by CI.
+#36–#43 were merged through one integration PR (#45): the ruleset requires branches to be up
+to date with `main`, so merging them one by one would have cost a CI round each. Merging a
+branch's unchanged head marks its PR as merged.
 
-**Driving the game for tests (Linux):** `VW_PAD_FILE=<file>` takes pad tokens
-(`cross`, `lx=255`, ...); the Insert overlay only reads real input, so use `ydotool` (start
-`ydotoold`; Insert is key 110, the overlay navigates with the arrow keys and Space). On
-Windows, an AutoHotkey or PowerShell `SendInput` script does the same. In battle, Cross on the
-Command Post does nothing during the tutorial; menus accept Cross.
+Performance A/B on the laptop (New Game opening, `VW_VSYNC=0`, ~4,200 draws/frame), `main`
+before the merges against after: 51.7 vs 51.8 FPS and 53.7 vs 55.7 FPS (two runs each; the
+spread is heat). No regression. All native and Python tests pass.
+
+## Open work for the next agent, in order
+
+1. **Windows play test of v1.3.0** (the release zip, not a dev build): first-start setup,
+   title, New Game opening, Continue into the Palevia battle, System → Options PC rows
+   (11, the last is Performance Overlay), Insert menu: Aspect Ratio 21:9 then Apply and restart
+   (black bars on a 16:9 screen, wider scene), Anime4K Fast/Quality, Stick Dead Zone with a
+   controller, Xbox controller prompts (Cross prompt = A), save and load. Report anything
+   broken as a fix PR and a v1.3.1.
+2. **Pull request #27, Text Language** (branch `claude/text-language`, updated 2026-10-27 to
+   `f756bf8`, a merge of `main`). The owner decided: the setting lives **only in the Insert
+   menu** and `vw.ini` (`text_language=`), not on the game's Options screen (no room: 11 rows).
+   The merge resolved every conflict that way: native row removed, `vw.ini` keeps the key,
+   the test asserts there is no "Text Language" row. Setup (`launcher/vw_launcher.py
+   choose_game`) asks for the dump kind first (#27), then warns about another `eboot.bin`
+   build (#40); the official Asia copy and the English-patched one share the supported eboot
+   (SHA-256 `de8e4970…`), so the two checks don't overlap. Python tests pass (127); **the
+   native build and tests were not run** (stopped for the move). To do: build, run
+   `packaging/test-native.sh`, wait for CI on the PR, then check on Windows: setup with the
+   English dump, Insert menu → Text language → Japanese → Apply and restart → Japanese text,
+   back to Game default. Then merge. When it ships, close #14 with a note (its last open point
+   was that reporter's official Asia copy).
+3. **Issue #47, RX 470 on Windows does not start** (v1.2.0): `Failed to create graphics
+   pipeline: ErrorUnknown` 1.4 s in, during pipeline warm-up (`vk_graphics_pipeline.cpp:437`).
+   AMD proprietary driver 2.0.279 (Vulkan 1.3.260, about late 2023); pipeline binaries are off
+   there (no `VK_KHR_pipeline_binary`), so it is a plain `vkCreateGraphicsPipelines` failure
+   in the driver. Not answered yet: the owner should be asked before replying. Suggested reply:
+   install AMD's legacy driver for RX 400/500 (Adrenalin 26.5.2, May 2026), try v1.3.0, attach
+   the new log. If it still fails, the next step is to log which pipeline fails (shader hashes,
+   key) and try that pipeline's state on the 9070 XT with the same extensions turned off.
+4. **Audio too quiet on Windows** (owner's report, from 2026-10-20). v1.2.0 shipped a stereo
+   downmix at full volume (#24); not re-checked since. Ask the owner whether it is still quiet.
+5. **Close as not planned:** #42 (Android port: the port runs the PS4's x86-64 code natively,
+   phones are ARM). #33 (Hong Kong 1.05): the owner said to ignore it.
+
+## Driving the game for tests
+
+Scripted pad input needs no window focus: `VW_PAD_FILE=<file>` holds tokens (`cross`, `down`,
+`lx=0..255`, ...), re-read when the file changes; frame dumps with
+`VW_FRAME_DUMP_TRIGGER=<file>` and `VW_DUMP_DIR`.
+
+- Windows: `tools/uo_pad.ps1 -Launch`, then `tools/uo_pad.ps1 "cross,wait1000,dump"`;
+  `tools/uo_shot.ps1 <png>` screenshots the window.
+- Linux: `tools/uo_pad.sh --launch <dump>`, then `tools/uo_pad.sh "cross wait1000 dump"`.
+- Saves from reporters: `tools/import_save.py <savedata/1/CUSA36381> <slot> <UCSAVEFILE.DATA>`
+  (the Load list comes from a table in `GLOBALDATA/UCGLOBALDATA.DAT`; copying the file is not
+  enough). Close the game first.
+- Route: boot ~40 s, Cross (skip the opening), Cross (Press Any Button); the title cursor is on
+  Continue. New Game is Down, Cross. Pressing Cross every ~2 s gets through the opening to the
+  tutorial battle (~5 min). There: Cross on Ilenia's unit, Cross (Move), stick to Valmore's
+  crowned 9 (`lx=80+ly=240:500` from Ilenia, then small nudges), Cross, Cross (Battle), then
+  **wait without input**: Cross spam reopens Ilenia's menu and pauses the battle. Then once
+  more against the next crowned 9; the story scenes follow.
+- Benchmarks: `VW_VSYNC=0 VW_FRAME_STATS=1`, read the `Frame stats:` lines (FPS, us/draw,
+  draws/frame) in the New Game opening.
+
+### Earlier (2026-10-20, v1.1.0 and v1.2.0)
+
+v1.2.0: NVIDIA pipeline-binary crash (#23, `VK_KHR_pipeline_binary` off on NVIDIA,
+`VW_PIPELINE_BINARIES=0`), Windows audio 7.1 → stereo downmix at full volume (#24).
+v1.1.0 (PR #22): AppImage Wayland crash (`restore_library_path`), Apply and restart exit 23,
+900p → 1080p rendering at 4K, signature-mismatch 4K, Change game folder 30 s wait, atomic
+`vw.ini`/`launcher.json` writes, save backup rotation.
 
 How the updater decides: `scripts/updates.py` docstring. The running version is
 `_internal/runtime/VERSION` (`git describe --match 'v[0-9]*'`); `vX.Y.Z-N-g<hash>` is newer than
-vX.Y.Z, a version without a `v` tag (today's builds) is older than every release. `check_updates=0`
-in `vw.ini` or `VW_UPDATES=0` turns the check off; "Skip this version" is kept in
-`data/launcher.json` (`skipped_update`).
+vX.Y.Z, a version without a `v` tag is older than every release. `check_updates=0` in `vw.ini`
+or `VW_UPDATES=0` turns the check off.
 
 ## State
 
@@ -153,20 +176,20 @@ before this fix has no vtables or function tables: re-import a new `eboot_ghidra
    - then stage B's pure lookups (buffers, vertex/index, textures) to stage A's workers, with
      generation checks on stage B (bbport's unimplemented "stage 2").
    Measure in the opening with `VW_FRAME_STATS=1 VW_VSYNC=0` (us/draw, idle, EOP latency).
-3. **Native settings, what is left:** run it on Windows (CI builds it; the hooks use the
-   game's System V calling convention, as the button icon hook does); a restart prompt for
-   Render Resolution in the game's screen (now it applies at the next start); a Japanese system
-   language (the PC texts are English only).
+3. **Native settings, what is left:** a restart prompt for Render Resolution in the game's
+   screen (now it applies at the next start); the PC texts are English only. The screen is
+   full (11 PC rows): a new row means dropping one.
 4. **Live button icon switching:** swap the icon texture at bind time (bbport
    `vk_button_prompts.cpp`) instead of relying on the sprite table being re-read.
-5. Optional: deband filter; parallel boot decompression; ultrawide (see unicorn/HANDOFF.md).
+5. Optional: deband filter; parallel boot decompression.
 
 ## Working on it
 
 - Windows build: MSYS2 CLANG64 shell, `bash build.sh` (development) or
   `bash packaging/windows/build.sh unicorn` (the release folder); details and the Linux/Windows
   differences in [../../packaging/windows/README.md](../../packaging/windows/README.md).
-- Linux build: `bash build.sh` (unset a cross toolchain's CC/CXX/CMAKE_SYSROOT/LDFLAGS first).
+- Linux build: `bash build.sh` (unset a cross toolchain's CC/CXX/CMAKE_SYSROOT/LDFLAGS first,
+  and drop its directory from PATH: a `vulkan/vulkan.h` not found error means it is still there).
   Tests: `python -m unittest discover -s tests`, `bash build.sh --test`, the GPU tests
   (`packaging/test-native.sh` lists them).
 - Run: `VW_GAME_DIR=<dump> VW_DATA_DIR=run_uo python3 run.py`; scripted input
