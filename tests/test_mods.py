@@ -84,6 +84,37 @@ class ModTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mods.build_overlay(self.game, self.root / 'out', [('A', a)])
 
+    def archive(self, path, files):
+        """A CPK of `files` (name -> bytes), stored uncompressed."""
+        blob = Path(str(path) + '.blob')
+        blob.write_bytes(b''.join(files.values()))
+        source, at = mock.Mock(path=blob, files={}), 0
+        for name, data in files.items():
+            source.files[name] = (at, len(data), len(data))
+            at += len(data)
+        mods.cpk.write(path, {name: (source, name) for name in files})
+        blob.unlink()
+
+    def test_switch_text_archive_merged_into_language_archives(self):
+        merge = {'archives': ('Unicorn_US.CPK',), 'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'skip': ('.ftx',)}
+        for name in ('Unicorn_TW.CPK', 'Unicorn_CN.cpk'):
+            self.archive(self.game / name, {'GUI/Interface.mbs': b'ps4 ui', 'MsgSheet/UcSysMsg.fms': b'old text'})
+        for name, text in (('A', b'switch text'), ('B', b'later text')):
+            (self.moddir / name).mkdir(parents=True)
+            self.archive(self.moddir / name / 'Unicorn_US.CPK',
+                         {'MsgSheet/UcSysMsg.fms': text, 'MsgSheet/UcNew.fms': b'new', 'Help/Help.ftx': b'nvt'})
+        with mock.patch.object(mods, 'archive_merge', return_value=merge):
+            names = mods.game_names(self.game)
+            self.assertEqual(mods.discover(self.moddir, names), ['A', 'B'])
+            result = mods.build_overlay(self.game, self.root / 'out', [('A', self.moddir / 'A'), ('B', self.moddir / 'B')])
+        for name in ('Unicorn_TW.CPK', 'Unicorn_CN.cpk'):
+            archive = mods.cpk.Archive(result / name)
+            self.assertEqual(set(archive.files), {'GUI/Interface.mbs', 'MsgSheet/UcSysMsg.fms', 'MsgSheet/UcNew.fms'})
+            self.assertEqual(archive.read('MsgSheet/UcSysMsg.fms'), b'later text')
+            self.assertEqual(archive.read('GUI/Interface.mbs'), b'ps4 ui')
+            self.assertEqual(mods.cpk.Archive(self.game / name).read('MsgSheet/UcSysMsg.fms'), b'old text')
+        self.assertFalse((result / 'Unicorn_US.CPK').exists())
+
     def test_executable_replacement_rejected(self):
         a = self.mod('A')
         (a / 'eboot.bin').write_bytes(b'unsupported')

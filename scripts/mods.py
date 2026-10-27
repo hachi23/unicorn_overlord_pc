@@ -9,6 +9,9 @@ import shutil
 import sys
 import tempfile
 
+import cpk
+
+
 def child(folder, name):
     """`name` inside `folder`, matching an existing entry case-insensitively (mods made on
     Windows often differ from the game's lower-case names)."""
@@ -23,10 +26,20 @@ def child(folder, name):
 SYSTEM = ('eboot.bin', 'sce_module', 'sce_sys')
 
 
+def archive_merge(game):
+    """The game's mod_archive_merge (game_profiles.py), or None."""
+    from game_profiles import profile
+    from patches import game_title_id
+    return profile(game_title_id(game)).get('mod_archive_merge')
+
+
 def game_names(game):
     """Case-folded names of the game folder's top-level content (CPK archives, data folders,
-    ...): the paths a mod may replace or add under."""
-    return {e.name.casefold() for e in Path(game).iterdir()} - set(SYSTEM)
+    ...) and the archives a mod may bring to be merged into the game's (archive_merge): the
+    paths a mod may replace or add under."""
+    merge = archive_merge(game) or {}
+    return ({e.name.casefold() for e in Path(game).iterdir()} - set(SYSTEM) |
+            {name.casefold() for name in merge.get('archives', ())})
 
 
 def content_root(folder, names):
@@ -167,14 +180,46 @@ def expand(directory):
         directory.mkdir(exist_ok=True)
 
 
+def merge_archives(overlay, merge, archives):
+    """Writes each of the game's merge['into'] archives in `overlay` again with the files of
+    `archives` ((mod, path) in mod order: a later mod's file wins) in place of or beside its own,
+    leaving out names ending in merge['skip']."""
+    sources = [(mod, cpk.Archive(path)) for mod, path in archives]
+    for target in merge['into']:
+        destination = child(overlay, target)
+        if not is_link(destination):
+            continue
+        base = cpk.Archive(link_target(destination))
+        files = {name.casefold(): (name, base, name) for name in base.files}
+        taken, skipped = set(), 0
+        for mod, archive in sources:
+            for name in archive.files:
+                if name.casefold().endswith(tuple(merge.get('skip', ()))):
+                    skipped += 1
+                    continue
+                files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
+                taken.add(name.casefold())
+        remove_link(destination)
+        cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
+        print(f'Mods: {destination.name}: {len(taken)} files from {", ".join(m for m, _ in archives)}'
+              f'{f", {skipped} left out (another platform)" if skipped else ""}', file=sys.stderr)
+
+
 def build_overlay(game, out, mods):
     game = Path(game).resolve(strict=True)
     names = game_names(game)
+    merge = archive_merge(game) or {}
+    merged = {name.casefold() for name in merge.get('archives', ())}
     replacements = []
+    archives = []
     owners = {}
     for name, root in mods:
         count = 0
         for relative, source in mod_files(root, names):
+            if len(relative.parts) == 1 and relative.name.casefold() in merged:
+                archives.append((name, source))
+                count += 1
+                continue
             key = relative.as_posix().casefold()
             if key in owners:
                 print(f'Mods: {relative}: {owners[key]} -> {name}', file=sys.stderr)
@@ -182,7 +227,7 @@ def build_overlay(game, out, mods):
             replacements.append((relative, source))
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
-    if not replacements:
+    if not replacements and not archives:
         return game
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -210,6 +255,8 @@ def build_overlay(game, out, mods):
                 added += 1
             make_link(destination, source)
         print(f'Mods: {replaced} game files replaced, {added} added', file=sys.stderr)
+        if archives:
+            merge_archives(overlay, merge, archives)
         return overlay
     except BaseException:
         shutil.rmtree(overlay)
