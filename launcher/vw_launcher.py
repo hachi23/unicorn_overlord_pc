@@ -71,7 +71,7 @@ GAMES = {
                 'label': 'Asia version (official, no English patch)',
                 'caveats': (
                     'No English text. Pick the text language below; it can be changed later in '
-                    'System > Options > Text Language (applied at the next start).',
+                    'the in-game menu (Insert, or R3+L2) > Text language, applied at the next start.',
                     'The Asia version itself never shows its Japanese text; the port switches it on. '
                     'Tested in the menus so far.',
                     'Korean is not included in this version. Voices: Japanese or English, in the '

@@ -77,7 +77,10 @@ class ModTests(unittest.TestCase):
 
     def test_mod_symlinks_rejected(self):
         a = self.mod('A')
-        (a / 'game_data/escape').symlink_to(self.assets, target_is_directory=True)
+        try:
+            (a / 'game_data/escape').symlink_to(self.assets, target_is_directory=True)
+        except OSError:  # Windows without Developer Mode or admin
+            self.skipTest('symlinks unavailable')
         with self.assertRaises(ValueError):
             mods.build_overlay(self.game, self.root / 'out', [('A', a)])
 
