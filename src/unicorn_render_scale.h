@@ -19,6 +19,38 @@ static const uint32_t unicorn_height_imm[] = {0x3da19, 0x3db5b, 0x3e2dd};
 static const uint32_t unicorn_width_float = 0xaf31a4;
 static const uint32_t unicorn_height_float = 0xaf31a8;
 
+/* The battle map is drawn into targets of its own, min(screen, 2880x1620): the PS4 Pro's limit,
+ * kept at any Pro size. Two copies of the code (not a Ghidra function; 0x2377d8 and 0x2379b2)
+ * load `mov r32, 2880` and `mov r32, 1620` and take the screen size instead when it is smaller
+ * than the floats 2880.0f/1620.0f in rodata (also read by the getters FUN_00337da0/FUN_00337dd0
+ * and a pass in FUN_0041a080). At 4K the map was drawn at 2880x1620 and enlarged, so units and
+ * their rings looked grainier than on PS5 (#56). The render size there lifts the limit. */
+static const uint32_t unicorn_map_width_imm[] = {0x2377da, 0x2379b4};
+static const uint32_t unicorn_map_height_imm[] = {0x23780c, 0x2379e0};
+static const uint32_t unicorn_map_width_float = 0xaf31b4;
+static const uint32_t unicorn_map_height_float = 0xaf31b8;
+
+static inline int unicorn_map_limit_signature_match(const unsigned char *image, uint64_t size) {
+    for (unsigned i = 0; i < 2; ++i) {
+        const uint32_t w = unicorn_address(unicorn_map_width_imm[i]);
+        const uint32_t h = unicorn_address(unicorn_map_height_imm[i]);
+        uint32_t wv, hv;
+        if (!w || !h || w + 4 > size || h + 4 > size) return 0;
+        /* mov r14d / r12d (41 be, 41 bc) and mov r15d / ebx (41 bf, bb) */
+        if ((image[w - 1] != 0xbe && image[w - 1] != 0xbc) || (image[h - 1] != 0xbf && image[h - 1] != 0xbb))
+            return 0;
+        memcpy(&wv, image + w, 4);
+        memcpy(&hv, image + h, 4);
+        if (wv != 2880 || hv != 1620) return 0;
+    }
+    const uint32_t wf_at = unicorn_address(unicorn_map_width_float), hf_at = unicorn_address(unicorn_map_height_float);
+    float wf, hf;
+    if (!wf_at || !hf_at || hf_at + 4 > size) return 0;
+    memcpy(&wf, image + wf_at, 4);
+    memcpy(&hf, image + hf_at, 4);
+    return wf == 2880.0f && hf == 1620.0f;
+}
+
 /* Each operand follows the `mov ecx` opcode (0xb9) and holds 3840 or 2160. */
 static inline int unicorn_render_scale_signature_match(const unsigned char *image, uint64_t size) {
     for (unsigned i = 0; i < 3; ++i) {
