@@ -84,6 +84,11 @@ Measured on the test system above, 1080p:
   titles in a large font that, in the Chinese releases the patch builds on, holds only the
   Chinese titles' characters. The rest of the chapter is unaffected. Not fixed yet: pointing the
   font at the English release's large font crashed the game when the card opened.
+- **Language mods are experimental** (Switch text files such as `Unicorn_US.CPK`, JSON
+  translations; [LANGUAGE_MODS.md](LANGUAGE_MODS.md)). Checked on the title menu and the opening
+  dialogue with a Brazilian Portuguese Switch translation. Long menu texts can run past their
+  box, and the start-up warning does. French, German, Italian and Spanish Switch files are
+  untested. Please report with the **Translation report** issue template.
 - **Ultrawide (21:9, 32:9) is experimental.** It was made on a 16:9 screen and checked there
   with black bars; nobody has tried it on an ultrawide monitor yet. Menus and text stay 16:9 in
   the middle. Please report how it looks with the **Ultrawide report** issue template (README,

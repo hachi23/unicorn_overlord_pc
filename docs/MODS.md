@@ -47,7 +47,10 @@ enabled and go to the end of the list, in alphabetical order.
 | `VW_MODS_ENABLED=0` | Starts without any mod. |
 | `VW_MODS_CONFIG` | Another `mods.json`. |
 
-## Unicorn Overlord: Switch text mods
+## Unicorn Overlord: Switch text mods (experimental)
+
+For step-by-step instructions see [LANGUAGE_MODS.md](LANGUAGE_MODS.md). This support is
+experimental: it was checked on the title menu and the opening dialogue only.
 
 The Switch version keeps its English text in `Unicorn_US.CPK` (`MsgSheet/*.fms`), in the same
 format as the PS4 version (the fan English patch is that text). A Switch text mod that ships
@@ -62,7 +65,7 @@ mods/
 Its files are merged into the PS4 language archives the game reads, `Unicorn_TW.CPK` and
 `Unicorn_CN.CPK`, and replace their text. The rest of those archives stays (the fan patch's
 English interface). The log shows, for example,
-`Mods: Unicorn_TW.CPK: 33 files from UO Text Fixes, 14 left out (another platform)`.
+`Mods (experimental): Unicorn_TW.CPK: 33 files from UO Text Fixes, 14 left out (another platform)`.
 `Unicorn_FR/DE/IT/ES.CPK` are merged the same way. When several mods bring the same file, the
 later one in the order wins.
 
@@ -70,7 +73,8 @@ later one in the order wins.
   translated help pictures keep the PS4 ones.
 - Mods that replace the Switch's `Unicorn.CPK` or other archives, and the Switch `exefs`, are
   not supported.
-- With the text language `japanese` no language archive is read, so the mod has no effect.
+- The mod replaces the Traditional and Simplified Chinese text. With the text language
+  `japanese` or `korean` neither is read, so the mod has no effect.
 - The Switch story text (`UcScriptMsgConv`) mostly has no line breaks, and the PS4 dialogue
   boxes do not add them: lines over 54 characters are broken at spaces when the archive is
   merged, as the PS4 text is. Menus and other sheets are left as they are, so a long translated
@@ -78,7 +82,9 @@ later one in the order wins.
 - Checked in game with a Brazilian Portuguese Switch translation: title menu and opening
   dialogue, accented letters (ã, ç, é, í) included.
 
-## Unicorn Overlord: translations
+## Unicorn Overlord: translations (experimental)
+
+Step by step: [LANGUAGE_MODS.md](LANGUAGE_MODS.md).
 
 A translation is a mod with the game's text sheets as JSON, one file per sheet:
 
@@ -107,15 +113,15 @@ with an error naming the file. A whole `.fms` sheet in `MsgSheet/` replaces the 
 
 At each start the sheets are merged into the language archives the game reads
 (`Unicorn_TW.CPK`, `Unicorn_CN.CPK`); the game folder is not changed. The log shows, for example,
-`Mods: Unicorn_TW.CPK: 3 files from My translation`. Several translations combine in the mod
+`Mods (experimental): Unicorn_TW.CPK: 3 files from My translation`. Several translations combine in the mod
 order, entry by entry: a later mod's entry wins. Turn a translation off in `mods.json` like any
 mod.
 
 - The fonts are the game's: a character they lack shows as a box. The dialogue and menu fonts
   have the Latin accented letters (checked with Portuguese); other scripts are untested.
 - Text longer than the original may run past its box.
-- With the text language `japanese` no language archive is read, so the translation has no
-  effect.
+- With the text language `japanese` or `korean` neither archive is read, so the translation has
+  no effect.
 
 ## Third-party patches (shadPS4 XML)
 

@@ -37,7 +37,7 @@ Only the dump listed above is supported.
 
 ## Download
 
-Download [v1.0.0 for Windows and Linux](https://github.com/hachi23/unicorn_overlord_pc/releases/tag/v1.0.0).
+Download [the newest release for Windows and Linux](https://github.com/hachi23/unicorn_overlord_pc/releases/latest).
 The release includes checksums, source and matching debug symbols.
 
 Test builds of `main` are on the [`latest` pre-release](https://github.com/hachi23/unicorn_overlord_pc/releases/tag/latest):
@@ -140,6 +140,15 @@ template and attach:
 - screenshots of the battle map, a story scene with text, a menu, and anything stretched,
   cut off or misplaced (Win+Shift+S on Windows, Spectacle or your desktop's tool on Linux);
 - your monitor's resolution and the display mode (Windowed, Borderless or Fullscreen).
+
+### Other languages (experimental)
+
+Fan translations made for the Switch version (`Unicorn_US.CPK`, such as the Brazilian Portuguese
+one) and translations you write yourself as JSON files work as mods in `data/mods/`. They replace
+the Chinese text, so set **Text Language** (Insert menu) to Traditional or Simplified Chinese.
+Only the title menu and the opening dialogue have been checked so far. Step by step:
+[docs/LANGUAGE_MODS.md](docs/LANGUAGE_MODS.md). Reports are welcome with the
+**Translation report** issue template.
 
 ### DLC
 

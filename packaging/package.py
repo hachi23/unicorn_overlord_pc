@@ -211,7 +211,9 @@ def main():
         'Keep this folder together (the program, _internal/, LICENSE and licenses/). Settings,\n'
         'the installed game, logs and saves are in data/ beside the program. After an error the\n'
         'program offers a reviewed diagnostics ZIP (also: start it with --export-diagnostics).\n'
-        'Help: https://github.com/hachi23/unicorn_overlord_pc/blob/main/docs/TROUBLESHOOTING.md\n', encoding='utf-8')
+        'Help: https://github.com/hachi23/unicorn_overlord_pc/blob/main/docs/TROUBLESHOOTING.md\n'
+        'Other languages (experimental): '
+        'https://github.com/hachi23/unicorn_overlord_pc/blob/main/docs/LANGUAGE_MODS.md\n', encoding='utf-8')
     revision = subprocess.check_output(['git', 'rev-parse', '--short=12', 'HEAD'], cwd=ROOT, text=True).strip()
     target = 'windows' if WINDOWS else 'linux'
     with tarfile.open(dist.parent / f'{key}-{target}-symbols-{revision}.tar.gz', 'w:gz') as symbols:
