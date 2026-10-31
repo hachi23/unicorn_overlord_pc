@@ -139,6 +139,15 @@ template and attach:
   cut off or misplaced (Win+Shift+S on Windows, Spectacle or your desktop's tool on Linux);
 - your monitor's resolution and the display mode (Windowed, Borderless or Fullscreen).
 
+### DLC
+
+Put the DLC you own in a `dlc` folder in the data directory (next to `vw.ini`): the PS4
+package as it is (for example `HP0177-CUSA36381_00-PRIVILEGEDEMBLEM-A0000-V0100.pkg`), or its
+extracted folder. A `.zip` must be unpacked first. At the next start the log lists each one
+(`DLC: PRIVILEGEDEMBLEM (...)`) and the game sees it as owned. Only the package's name is read:
+Unicorn Overlord's DLC unlocks content that is already in the game. The game's DLC menus
+show what it unlocked.
+
 ### Keyboard
 
 | Key | Button |

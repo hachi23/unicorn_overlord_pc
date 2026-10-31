@@ -294,6 +294,12 @@ def main():
             pass
         # Per-game settings (scripts/game_profiles.py).
         game_profiles.apply(game_title_id(game), env)
+        # DLC the game is told it owns: packages or extracted folders in dlc/ (scripts/dlc.py).
+        import dlc
+        owned = dlc.labels(env.get('VW_DLC_DIR', data / 'dlc'), game_title_id(game))
+        if owned:
+            env['VW_ADDCONT'] = ','.join(owned)
+            LOG.write('DLC: ' + ', '.join(f'{label} ({source})' for label, source in owned.items()))
         if patched:
             # The patch notes give the direct memory and VBlank rate the selected patches need.
             names = selected_patches(profile[1], profile[2], env.get('VW_PATCHES', ''), env.get('VW_PATCHES_ONLY') == '1')

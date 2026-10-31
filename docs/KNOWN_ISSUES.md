@@ -141,7 +141,8 @@ Measured on the test system above, 1080p:
 - Remapping sticks, triggers and the menu shortcut. Buttons can be remapped in the in-game
   Controls tab and are saved in `vw.ini`. The `VW_KEY_MAP` (keyboard) and `VW_PAD_MAP`
   (controller) environment variables override saved bindings, e.g. `VW_KEY_MAP="cross=Q"`.
-- DLC and PS4 package (.pkg) installation: the port installs an already extracted game folder.
+- PS4 package (.pkg) installation of the game: the port installs an already extracted game
+  folder. DLC packages are read as they are (README, DLC).
 - The game's Options screen has the main PC settings; the GPU readback options, frames queued,
   background shader compilation, overlay layout and button remapping are only in the Insert menu.
 
