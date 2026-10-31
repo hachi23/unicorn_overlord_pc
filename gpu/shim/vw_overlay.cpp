@@ -336,10 +336,11 @@ void PerformanceTab() {
     ImGui::SeparatorText("Applied on restart");
     if (BeginRows("##restart")) {
         static const char* const resolution_labels[] = {"Native (1080p)", "720p (less GPU work)",
-                                                        "900p (less GPU work)", "1800p", "4K"};
+                                                        "900p (less GPU work)", "1800p (supersampling)",
+                                                        "4K (supersampling)"};
         ChoiceRow("Render resolution", s.render_resolution, resolution_labels, nullptr, int(G::Resolutions.size()),
-                  "Above 1080p: drawn larger and averaged down to the window (smoother edges, sharper "
-                  "art, more GPU work). 720p and 900p: less GPU work for weak GPUs, softer image; the "
+                  "Above 1080p, supersampling: drawn larger and averaged down to the window (smoother "
+                  "edges, sharper art, more GPU work). 720p and 900p: less GPU work for weak GPUs, softer image; the "
                   "layout stays the same.");
         static const char* const aspect_labels[] = {"16:9", "21:9 (ultrawide)", "32:9 (super ultrawide)"};
         ChoiceRow("Aspect ratio (experimental)", s.aspect_ratio, aspect_labels, nullptr, int(G::AspectRatios.size()),
