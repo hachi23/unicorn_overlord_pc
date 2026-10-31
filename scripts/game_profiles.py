@@ -13,6 +13,11 @@ PROFILES = {
         # The bundled PSN libraries run natively: their C++ toolkit then reaches the runtime only
         # through the PSN C APIs, which answer as signed out.
         'native_modules': ('libSceNpToolkit2.prx', 'libSceNpCppWebApi.prx', 'libSceJobManager.prx'),
+        # The archives as eboot.bin spells them when it opens them (the official packages spell
+        # them the same; fan repacks may not, see vw_launcher.dump_files).
+        'archives': ('Unicorn.CPK', 'UnicornPatch.CPK', 'Unicorn_US.CPK', 'Unicorn_FR.CPK',
+                     'Unicorn_IT.CPK', 'Unicorn_DE.CPK', 'Unicorn_ES.CPK', 'Unicorn_CN.CPK',
+                     'Unicorn_TW.CPK', 'Unicorn_KO.CPK'),
         # Switch text mods: the Switch version's language archives hold the same text files
         # (MsgSheet/*.fms). A mod's archive is merged into the ones this version binds (English
         # with the fan patch, else Chinese) instead of being added; its textures (.ftx, NVT on the

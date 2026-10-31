@@ -62,9 +62,10 @@ GAMES = {
                     'English text (a fan translation). Voices: Japanese or English, in the game\'s '
                     'Voice Language option.',
                     'Leave Text Language in the game\'s options on Game Default. Japanese there shows '
-                    'the Japanese text; both Chinese choices also show English.',
-                    'A few tutorial pictures were not translated by the patch and may show Japanese '
-                    'text.',
+                    'the Japanese text; Chinese shows English (Simplified Chinese with the patch\'s '
+                    'second release: Chinese).',
+                    'With the patch\'s first release a few tutorial pictures show Japanese text; the '
+                    'second release translates them.',
                 ),
                 'languages': (('auto', 'English'),),
             },
@@ -147,17 +148,15 @@ def english_text(folder):
     """The Chinese text archives ('cn', 'tw') of a dump that hold English text: the fan English
     patch puts its text there (version 1: the same file in both; later versions need not). Read
     from MsgSheet/UcSysMsg.fms: mostly Latin letters, or mostly CJK (UTF-8 lead bytes E0-EF).
-    Names are matched without case, as the game does."""
+    Names are matched without case, as the game does (dump_files)."""
     import cpk
-    files = {}
     try:
-        for entry in Path(folder).iterdir():
-            files[entry.name.lower()] = entry
+        files = {name: source for name, (source, _) in dump_files(folder).items()}
     except OSError:
         return set()
     found = set()
     for key in ('cn', 'tw'):
-        path = files.get(f'unicorn_{key}.cpk')
+        path = files.get(f'unicorn_{key}.cpk'.casefold())
         if not path:
             continue
         try:
@@ -300,11 +299,36 @@ def choose_game(game_info, start, dump=None, language=None):
         root.destroy()
 
 
+def dump_files(folder):
+    """The dump's top-level entries: {case-folded name: (path, name to install it as)}. The game
+    opens its archives by the names in its profile (game_profiles.py, 'archives'), and the
+    official packages spell them so. A fan repack may not (the English patch V2 ships
+    UnicornPatch.cpk and Unicorn_TW.cpk): copied over the base on a case-sensitive drive, both
+    spellings stay, and the game would open the base's. Then the other spelling, the later
+    package's file, wins (#58). Either way the archive is installed under the game's spelling."""
+    from game_profiles import profile
+    folder = Path(folder)
+    spelling = {name.casefold(): name for name in profile(game_title_id(folder)).get('archives', ())}
+    entries = {}
+    for entry in sorted(folder.iterdir(), key=lambda e: e.name):
+        key = entry.name.casefold()
+        if key in entries and entry.name == spelling.get(key):
+            continue
+        entries[key] = (entry, spelling.get(key, entry.name))
+    return entries
+
+
 def install_plan(source):
-    """(relative path, size) of every file of the dump, largest last."""
+    """(path in the dump, path to install it as, size) of every file of the dump, largest last
+    (dump_files picks between names that differ only in case)."""
     source = Path(source)
-    files = [(path.relative_to(source), path.stat().st_size) for path in source.rglob('*') if path.is_file()]
-    return sorted(files, key=lambda item: item[1])
+    files = []
+    for top, name in dump_files(source).values():
+        for path in ([top] if top.is_file() else sorted(top.rglob('*'))):
+            if path.is_file():
+                relative = path.relative_to(source)
+                files.append((relative, Path(name, *relative.parts[1:]), path.stat().st_size))
+    return sorted(files, key=lambda item: item[2])
 
 
 def install_files(source, target, progress=None, cancelled=lambda: False):
@@ -316,12 +340,12 @@ def install_files(source, target, progress=None, cancelled=lambda: False):
     partial = target.with_name(target.name + '.partial')
     partial.mkdir(parents=True, exist_ok=True)
     plan = install_plan(source)
-    total = sum(size for _, size in plan) or 1
+    total = sum(size for _, _, size in plan) or 1
     done, linked = 0, True
-    for relative, size in plan:
+    for relative, installed, size in plan:
         if cancelled():
             return False
-        to = partial / relative
+        to = partial / installed
         to.parent.mkdir(parents=True, exist_ok=True)
         if not (to.is_file() and to.stat().st_size == size):
             to.unlink(missing_ok=True)
@@ -344,6 +368,11 @@ def install_files(source, target, progress=None, cancelled=lambda: False):
         done += size
         if progress:
             progress(done, total, linked)
+    # Left by an earlier, cancelled install of another dump (or of the other spelling).
+    planned = {installed for _, installed, _ in plan}
+    for path in sorted(partial.rglob('*'), reverse=True):
+        if path.is_file() and path.relative_to(partial) not in planned:
+            path.unlink()
     if target.exists():
         import shutil
         shutil.rmtree(target)
@@ -359,7 +388,7 @@ def install_game(game_info, source, data):
     from tkinter import messagebox, ttk
     target = data / 'game'
     plan = install_plan(source)
-    need = sum(size for _, size in plan)
+    need = sum(size for _, _, size in plan)
     data.mkdir(parents=True, exist_ok=True)
     same_drive = os.stat(source).st_dev == os.stat(data).st_dev
     root = tk_root()

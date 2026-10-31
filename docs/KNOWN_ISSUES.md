@@ -31,10 +31,15 @@ the same code at other addresses, which `src/unicorn_build.h` maps. It has Tradi
 Simplified Chinese, Korean and Japanese text, no English; tested to the opening scenes with every
 PC feature (Options rows, render resolution, 21:9, button icons, text language). The fan English patch only replaces the text files (`Unicorn_CN.CPK`, `Unicorn_TW.CPK`) and
 `param.sfo`; its `eboot.bin` is the official one, so both work. Setup recognizes the patch by
-its text, so both releases of it work: the first (one file in both slots) and the second (#58).
+its text, so both releases of it work: the first (one English file in both slots) and the second
+(#58: an update package with English in `Unicorn_TW.CPK` only, its 493 re-wrapped story lines and
+the 14 tutorial pictures in English; `Unicorn_CN.CPK` stays the official Simplified Chinese). The
+second spells its files `UnicornPatch.cpk` and `Unicorn_TW.cpk`: copied over the base on Linux,
+both spellings stay, and setup installs the patch's files under the names the game opens.
 
 Text language: the game picks it from the PS4 system language, and on any language but Korean or
-Chinese it shows Traditional Chinese (English with the English patch). **Text language** in
+Chinese it shows Traditional Chinese (English with the English patch). With the first release
+of the patch both Chinese choices show English; with the second, Simplified Chinese is Chinese. **Text language** in
 the Insert menu (R3+L2 on a controller) picks Japanese, Traditional or Simplified Chinese at the next
 start. Voice language is the game's own Voice Language option.
 
