@@ -59,6 +59,8 @@ class InstallTest(unittest.TestCase):
         # update's file is installed under that name and the base's is left out.
         (self.source / 'sce_sys' / 'param.sfo').write_bytes(param_sfo('CUSA36381'))
         (self.source / 'Unicorn_TW.CPK').write_bytes(b'base')
+        if (self.source / 'unicorn_tw.cpk').exists():
+            self.skipTest('the filesystem ignores case, so the two spellings cannot both exist')
         (self.source / 'Unicorn_TW.cpk').write_bytes(b'update')
         (self.source / 'UnicornPatch.cpk').write_bytes(b'patch')
         self.assertEqual(vw_launcher.dump_files(self.source)['unicorn_tw.cpk'][0].name, 'Unicorn_TW.cpk')
