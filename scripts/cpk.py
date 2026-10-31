@@ -121,6 +121,86 @@ class Archive:
             f.seek(offset)
             return f.read(size)
 
+    def extract(self, name):
+        """A file's contents, decompressed when stored as CRILAYLA."""
+        return crilayla(self.read(name))
+
+
+class Memory:
+    """Files held in memory, written into an archive as they are (not compressed)."""
+
+    def __init__(self):
+        self.path, self.files, self.data = None, {}, {}
+
+    def add(self, name, data):
+        self.files[name] = (0, len(data), len(data))
+        self.data[name] = data
+
+    def read(self, name):
+        return self.data[name]
+
+
+def child_file(folder, name):
+    """`name` in `folder`, matched without case as the game does."""
+    for entry in Path(folder).iterdir():
+        if entry.name.casefold() == name.casefold():
+            return entry
+    raise OSError(f'{name} not found in {folder}')
+
+
+def crilayla(data):
+    """CRILAYLA decompression; other data is returned as is. The stream is read from its end
+    backwards, bits from the top, and fills the output from its end; the first 0x100 bytes are
+    stored plain after the stream."""
+    if data[:8] != b'CRILAYLA':
+        return data
+    size, packed = struct.unpack_from('<II', data, 8)
+    if 16 + packed + 0x100 > len(data):
+        raise ValueError('CRILAYLA data is cut short')
+    out = bytearray(0x100 + size)
+    out[:0x100] = data[16 + packed:16 + packed + 0x100]
+    at, pool, left = 16 + packed - 1, 0, 0
+
+    def bits(count):
+        nonlocal at, pool, left
+        value = 0
+        while count:
+            if not left:
+                if at < 16:
+                    raise ValueError('CRILAYLA stream is cut short')
+                pool, left, at = data[at], 8, at - 1
+            take = min(left, count)
+            value = (value << take) | ((pool >> (left - take)) & ((1 << take) - 1))
+            left -= take
+            count -= take
+        return value
+
+    end = len(out) - 1
+    done = 0
+    while done < size:
+        if not bits(1):
+            out[end - done] = bits(8)
+            done += 1
+            continue
+        back, length = bits(13) + 3, 3
+        for width in (2, 3, 5):
+            more = bits(width)
+            length += more
+            if more != (1 << width) - 1:
+                break
+        else:
+            while True:
+                more = bits(8)
+                length += more
+                if more != 0xff:
+                    break
+        if done + length > size or back > done:
+            raise ValueError('CRILAYLA back reference out of range')
+        for _ in range(length):
+            out[end - done] = out[end - done + back]
+            done += 1
+    return bytes(out)
+
 
 HEADER = [('UpdateDateTime', 6), ('ContentOffset', 6), ('ContentSize', 6), ('TocOffset', 6), ('TocSize', 6),
           ('EnabledPackedSize', 6), ('EnabledDataSize', 6), ('Files', 4), ('Groups', 4), ('Attrs', 4),
@@ -170,17 +250,11 @@ def write(out, files):
         f.write(head + table + b'\0' * (content - ALIGN - len(table)))
         for name in names:
             source, original = files[name]
-            offset, size, _ = source.files[original]
-            with open(source.path, 'rb') as src:
-                src.seek(offset)
-                remaining = size
-                while remaining:
-                    block = src.read(min(remaining, 1 << 20))
-                    if not block:
-                        raise ValueError(f'{source.path.name}: {original} is cut short')
-                    f.write(block)
-                    remaining -= len(block)
-            f.write(b'\0' * (-size % ALIGN))
+            size = source.files[original][1]
+            data = source.read(original)
+            if len(data) != size:
+                raise ValueError(f'{original} is cut short')
+            f.write(data + b'\0' * (-size % ALIGN))
 
 
 def main():

@@ -71,8 +71,51 @@ later one in the order wins.
 - Mods that replace the Switch's `Unicorn.CPK` or other archives, and the Switch `exefs`, are
   not supported.
 - With the text language `japanese` no language archive is read, so the mod has no effect.
-- The Switch text sometimes has longer lines than the fan patch, which re-wrapped some of them
-  for the PS4 layout (the start-up warning runs past the screen edges).
+- The Switch story text (`UcScriptMsgConv`) mostly has no line breaks, and the PS4 dialogue
+  boxes do not add them: lines over 54 characters are broken at spaces when the archive is
+  merged, as the PS4 text is. Menus and other sheets are left as they are, so a long translated
+  menu text may still run past its box (the start-up warning runs past the screen edges).
+- Checked in game with a Brazilian Portuguese Switch translation: title menu and opening
+  dialogue, accented letters (ã, ç, é, í) included.
+
+## Unicorn Overlord: translations
+
+A translation is a mod with the game's text sheets as JSON, one file per sheet:
+
+```text
+mods/
+  My translation/
+    MsgSheet/
+      UcOption.json      {"0": "Opciones", "1": "Volumen de la música", ...}
+      UcSysMsg.json
+      UcScriptMsgConv.json   (the story)
+```
+
+To start one, export the text of your copy of the game:
+
+- Packaged port: run `"Unicorn Overlord.exe" --export-text` (Windows) or
+  `./Unicorn-Overlord-x86_64.AppImage --export-text` (Linux). It writes every sheet to
+  `data/mods/My translation/MsgSheet/`, from the text the game shows now (English with the fan
+  patch). `--export-text <folder>` writes somewhere else.
+- From the source: `python3 scripts/fms.py export <game folder> <mod folder>`.
+
+Each file maps an entry number to its text. Change the texts and keep the numbers; entries you
+delete keep the game's text, so a file may hold only the lines you changed. The files are UTF-8;
+`\n` is a line break, and codes such as `#(2)` (a button icon) and `%.0f` (a number) must stay.
+A sheet keeps its number of entries: an entry number the sheet does not have stops the start
+with an error naming the file. A whole `.fms` sheet in `MsgSheet/` replaces the game's sheet.
+
+At each start the sheets are merged into the language archives the game reads
+(`Unicorn_TW.CPK`, `Unicorn_CN.CPK`); the game folder is not changed. The log shows, for example,
+`Mods: Unicorn_TW.CPK: 3 files from My translation`. Several translations combine in the mod
+order, entry by entry: a later mod's entry wins. Turn a translation off in `mods.json` like any
+mod.
+
+- The fonts are the game's: a character they lack shows as a box. The dialogue and menu fonts
+  have the Latin accented letters (checked with Portuguese); other scripts are untested.
+- Text longer than the original may run past its box.
+- With the text language `japanese` no language archive is read, so the translation has no
+  effect.
 
 ## Third-party patches (shadPS4 XML)
 

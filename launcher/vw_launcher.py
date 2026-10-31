@@ -24,7 +24,8 @@ installation:
 
 Arguments: --choose-game asks for the game folder again; --after PID first waits for that
 process to end (the in-game "Change game folder" restart); --export-diagnostics only saves a
-diagnostics ZIP of the newest run (works while the game is still running); --finish-update
+diagnostics ZIP of the newest run (works while the game is still running); --export-text
+[FOLDER] writes the game's text as a translation mod to edit (docs/MODS.md); --finish-update
 FOLDER (with --after) is the second half of a Windows update (scripts/updates.py).
 
 Packaged, each start first looks for a newer release (unless check_updates=0 in vw.ini) and
@@ -53,7 +54,7 @@ GAMES = {
         'name': 'Unicorn Overlord', 'title': 'Unicorn Overlord', 'run_dir': 'run_uo',
         'colors': {'bg': '#0a1222', 'gold': '#c8a254', 'gold_hi': '#f0d48a'},
         # Both have the same eboot.bin; the fan English patch replaces the Chinese text files
-        # with one English file in both slots (docs/KNOWN_ISSUES.md). text_language: vw.ini.
+        # (docs/KNOWN_ISSUES.md, english_text). text_language: vw.ini.
         'dumps': {
             'english': {
                 'label': 'Asia version with the fan English patch',
@@ -61,9 +62,10 @@ GAMES = {
                     'English text (a fan translation). Voices: Japanese or English, in the game\'s '
                     'Voice Language option.',
                     'Leave Text Language in the game\'s options on Game Default. Japanese there shows '
-                    'the Japanese text; both Chinese choices also show English.',
-                    'A few tutorial pictures were not translated by the patch and may show Japanese '
-                    'text.',
+                    'the Japanese text; Chinese shows English (Simplified Chinese with the patch\'s '
+                    'second release: Chinese).',
+                    'With the patch\'s first release a few tutorial pictures show Japanese text; the '
+                    'second release translates them.',
                 ),
                 'languages': (('auto', 'English'),),
             },
@@ -142,24 +144,35 @@ def check_game(game_info, folder):
     return True, f'{name}  ·  {title_id}  ·  {build}'
 
 
+def english_text(folder):
+    """The Chinese text archives ('cn', 'tw') of a dump that hold English text: the fan English
+    patch puts its text there (version 1: the same file in both; later versions need not). Read
+    from MsgSheet/UcSysMsg.fms: mostly Latin letters, or mostly CJK (UTF-8 lead bytes E0-EF).
+    Names are matched without case, as the game does (dump_files)."""
+    import cpk
+    try:
+        files = {name: source for name, (source, _) in dump_files(folder).items()}
+    except OSError:
+        return set()
+    found = set()
+    for key in ('cn', 'tw'):
+        path = files.get(f'unicorn_{key}.cpk'.casefold())
+        if not path:
+            continue
+        try:
+            text = cpk.Archive(path).extract('MsgSheet/UcSysMsg.fms')
+        except (OSError, ValueError, KeyError):
+            continue
+        latin = sum(text.count(c) for c in b'etaoinsrhl')
+        cjk = sum(1 for b in text if 0xe0 <= b <= 0xef)
+        if latin > cjk:
+            found.add(key)
+    return found
+
+
 def detect_dump(folder):
-    """'english' when Unicorn_CN.CPK and Unicorn_TW.CPK are the same file (the English patch puts
-    its text in both), else 'asia'. Names are matched without case, as the game does."""
-    import hashlib
-    files = {}
-    try:
-        for entry in Path(folder).iterdir():
-            files[entry.name.lower()] = entry
-    except OSError:
-        return 'asia'
-    cn, tw = files.get('unicorn_cn.cpk'), files.get('unicorn_tw.cpk')
-    try:
-        if not cn or not tw or cn.stat().st_size != tw.stat().st_size:
-            return 'asia'
-        digests = [hashlib.sha256(path.read_bytes()).digest() for path in (cn, tw)]
-    except OSError:
-        return 'asia'
-    return 'english' if digests[0] == digests[1] else 'asia'
+    """'english' when the fan English patch is in the dump (english_text), else 'asia'."""
+    return 'english' if english_text(folder) else 'asia'
 
 
 def choose_dump(game_info, root, kind=None, language=None):
@@ -286,11 +299,36 @@ def choose_game(game_info, start, dump=None, language=None):
         root.destroy()
 
 
+def dump_files(folder):
+    """The dump's top-level entries: {case-folded name: (path, name to install it as)}. The game
+    opens its archives by the names in its profile (game_profiles.py, 'archives'), and the
+    official packages spell them so. A fan repack may not (the English patch V2 ships
+    UnicornPatch.cpk and Unicorn_TW.cpk): copied over the base on a case-sensitive drive, both
+    spellings stay, and the game would open the base's. Then the other spelling, the later
+    package's file, wins (#58). Either way the archive is installed under the game's spelling."""
+    from game_profiles import profile
+    folder = Path(folder)
+    spelling = {name.casefold(): name for name in profile(game_title_id(folder)).get('archives', ())}
+    entries = {}
+    for entry in sorted(folder.iterdir(), key=lambda e: e.name):
+        key = entry.name.casefold()
+        if key in entries and entry.name == spelling.get(key):
+            continue
+        entries[key] = (entry, spelling.get(key, entry.name))
+    return entries
+
+
 def install_plan(source):
-    """(relative path, size) of every file of the dump, largest last."""
+    """(path in the dump, path to install it as, size) of every file of the dump, largest last
+    (dump_files picks between names that differ only in case)."""
     source = Path(source)
-    files = [(path.relative_to(source), path.stat().st_size) for path in source.rglob('*') if path.is_file()]
-    return sorted(files, key=lambda item: item[1])
+    files = []
+    for top, name in dump_files(source).values():
+        for path in ([top] if top.is_file() else sorted(top.rglob('*'))):
+            if path.is_file():
+                relative = path.relative_to(source)
+                files.append((relative, Path(name, *relative.parts[1:]), path.stat().st_size))
+    return sorted(files, key=lambda item: item[2])
 
 
 def install_files(source, target, progress=None, cancelled=lambda: False):
@@ -302,12 +340,12 @@ def install_files(source, target, progress=None, cancelled=lambda: False):
     partial = target.with_name(target.name + '.partial')
     partial.mkdir(parents=True, exist_ok=True)
     plan = install_plan(source)
-    total = sum(size for _, size in plan) or 1
+    total = sum(size for _, _, size in plan) or 1
     done, linked = 0, True
-    for relative, size in plan:
+    for relative, installed, size in plan:
         if cancelled():
             return False
-        to = partial / relative
+        to = partial / installed
         to.parent.mkdir(parents=True, exist_ok=True)
         if not (to.is_file() and to.stat().st_size == size):
             to.unlink(missing_ok=True)
@@ -330,6 +368,11 @@ def install_files(source, target, progress=None, cancelled=lambda: False):
         done += size
         if progress:
             progress(done, total, linked)
+    # Left by an earlier, cancelled install of another dump (or of the other spelling).
+    planned = {installed for _, installed, _ in plan}
+    for path in sorted(partial.rglob('*'), reverse=True):
+        if path.is_file() and path.relative_to(partial) not in planned:
+            path.unlink()
     if target.exists():
         import shutil
         shutil.rmtree(target)
@@ -345,7 +388,7 @@ def install_game(game_info, source, data):
     from tkinter import messagebox, ttk
     target = data / 'game'
     plan = install_plan(source)
-    need = sum(size for _, size in plan)
+    need = sum(size for _, _, size in plan)
     data.mkdir(parents=True, exist_ok=True)
     same_drive = os.stat(source).st_dev == os.stat(data).st_dev
     root = tk_root()
@@ -741,6 +784,29 @@ def restore_library_path():
         os.environ['LD_LIBRARY_PATH'] = original
 
 
+def export_text(game_info, data, out):
+    """--export-text [FOLDER]: the game's text as JSON sheets in a new translation mod
+    (scripts/fms.py; default data/mods/My translation), from the archive the text language binds."""
+    import fms
+    from tkinter import messagebox
+    settings = load_settings(data)
+    folder = Path(out[0]) if out else data / 'mods' / 'My translation'
+    archive = 'Unicorn_CN.CPK' if settings.get('text_language') == 'simplified_chinese' else 'Unicorn_TW.CPK'
+    root = tk_root()
+    try:
+        count = fms.export(settings.get('game_dir', ''), folder, archive)
+        messagebox.showinfo(game_info['name'], f'{count} text sheets from {archive} written to\n'
+                            f'{folder / "MsgSheet"}\n\nEdit the texts there (UTF-8 JSON); the mod is '
+                            'used at the next start. docs/MODS.md (Translations) explains the format.',
+                            parent=root)
+        return 0
+    except (OSError, ValueError, KeyError) as error:
+        messagebox.showerror(game_info['name'], f'Could not export the text: {error}', parent=root)
+        return 1
+    finally:
+        root.destroy()
+
+
 def main(key):
     """Runs the setup and the game for GAMES[key], or one of the packaged roles (--run, --script)."""
     restore_library_path()
@@ -760,6 +826,8 @@ def main(key):
         finally:
             root.destroy()
         sys.exit(0)
+    if '--export-text' in args:
+        sys.exit(export_text(game_info, data, args[args.index('--export-text') + 1:][:1]))
     settings = load_settings(data)
     folder = settings.get('game_dir')
     if '--choose-game' in args or not check_game(game_info, folder)[0]:
@@ -769,6 +837,8 @@ def main(key):
             sys.exit(0)
         folder, dump, language = chosen
         settings['source_dir'] = folder
+        if dump == 'english' and language == 'auto' and english_text(folder) == {'cn'}:
+            language = 'simplified_chinese'  # the game binds Unicorn_TW.CPK by default
         if dump:
             import graphics_options
             settings.update(dump=dump, text_language=language)
