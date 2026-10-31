@@ -5,6 +5,7 @@ For players:
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): what is known not to work yet
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md): first steps when the game does not start or misbehaves
 - [MODS.md](MODS.md): loose-file mods and shadPS4 XML patches
+- [LANGUAGE_MODS.md](LANGUAGE_MODS.md): other languages from Switch text files or JSON translations (experimental)
 
 For contributors:
 

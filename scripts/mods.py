@@ -242,7 +242,7 @@ def merge_archives(overlay, merge, archives, loose=()):
             taken.add(sheet.casefold())
         remove_link(destination)
         cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
-        print(f'Mods: {destination.name}: {len(taken)} files from {", ".join(mods)}'
+        print(f'Mods (experimental): {destination.name}: {len(taken)} files from {", ".join(mods)}'
               f'{f", {skipped} left out (another platform)" if skipped else ""}', file=sys.stderr)
 
 
