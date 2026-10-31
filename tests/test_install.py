@@ -1,4 +1,5 @@
 import os
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,14 @@ import paths
 import sys
 sys.path.insert(0, str(paths.ROOT / 'launcher'))
 import vw_launcher  # noqa: E402
+
+
+def param_sfo(title_id):
+    """A param.sfo holding only TITLE_ID."""
+    key, value = b'TITLE_ID\0', title_id.encode() + b'\0'
+    keys, values = 20 + 16, 20 + 16 + len(key)
+    return (struct.pack('<4sIIII', b'\0PSF', 0x101, keys, values, 1) +
+            struct.pack('<HHIII', 0, 0x204, len(value), len(value), 0) + key + value)
 
 
 class InstallTest(unittest.TestCase):
@@ -43,6 +52,23 @@ class InstallTest(unittest.TestCase):
         (self.target / 'old.bin').write_bytes(b'old')
         self.assertTrue(vw_launcher.install_files(self.source, self.target))
         self.assertFalse((self.target / 'old.bin').exists())
+
+    def test_repack_spelling_wins_over_the_base(self):
+        # #58: the English patch V2 (an update package) spells its archives in lower case.
+        # Copied over the base on Linux both stay; the game opens Unicorn_TW.CPK, so the
+        # update's file is installed under that name and the base's is left out.
+        (self.source / 'sce_sys' / 'param.sfo').write_bytes(param_sfo('CUSA36381'))
+        (self.source / 'Unicorn_TW.CPK').write_bytes(b'base')
+        if (self.source / 'unicorn_tw.cpk').exists():
+            self.skipTest('the filesystem ignores case, so the two spellings cannot both exist')
+        (self.source / 'Unicorn_TW.cpk').write_bytes(b'update')
+        (self.source / 'UnicornPatch.cpk').write_bytes(b'patch')
+        self.assertEqual(vw_launcher.dump_files(self.source)['unicorn_tw.cpk'][0].name, 'Unicorn_TW.cpk')
+        self.assertTrue(vw_launcher.install_files(self.source, self.target))
+        self.assertEqual(sorted(p.name for p in self.target.iterdir() if p.is_file()),
+                         ['Unicorn.CPK', 'UnicornPatch.CPK', 'Unicorn_TW.CPK', 'eboot.bin'])
+        self.assertEqual((self.target / 'Unicorn_TW.CPK').read_bytes(), b'update')
+        self.assertEqual((self.target / 'UnicornPatch.CPK').read_bytes(), b'patch')
 
 
 if __name__ == '__main__':

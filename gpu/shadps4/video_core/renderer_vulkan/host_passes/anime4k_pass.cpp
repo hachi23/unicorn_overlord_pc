@@ -142,6 +142,15 @@ vk::ImageView Anime4kPass::Run(vk::CommandBuffer cmdbuf, Model& model, vk::Image
                          .descriptorType = vk::DescriptorType::eStorageImage,
                          .pImageInfo = &infos[count]};
         ++count;
+        // A push descriptor set holds its immutable sampler only when the binding is pushed
+        // (Vulkan spec, Push Descriptor Updates); the image info is ignored. RADV bakes the
+        // sampler into the shader either way, NVIDIA sampled garbage without it (#56).
+        infos[count] = vk::DescriptorImageInfo{};
+        writes[count] = {.dstBinding = SamplerBinding,
+                         .descriptorCount = 1,
+                         .descriptorType = vk::DescriptorType::eSampler,
+                         .pImageInfo = &infos[count]};
+        ++count;
         for (u32 k = 0; k < shader.input_count; ++k) {
             const int from = shader.inputs[k];
             infos[count] = from < 0 ? vk::DescriptorImageInfo{

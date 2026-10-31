@@ -472,7 +472,7 @@ static void forget_render_scale_env(void) {
 /* Before the GPU starts: the Pro path and a video output of the render size. Without the code
  * the patch expects the game stays native: the unpatched Pro path draws at 3840x2160, so 900p
  * picked on such an eboot ran at 4K. */
-static int render_scale_ready;
+static int render_scale_ready, map_limit_ready;
 static uint32_t render_width, render_height; /* the size prepare_unicorn_render_scale chose */
 static void prepare_unicorn_render_scale(const char *app0, uint64_t size) {
     uint32_t width, height;
@@ -489,6 +489,9 @@ static void prepare_unicorn_render_scale(const char *app0, uint64_t size) {
     render_width = width;
     render_height = height;
     render_scale_ready = 1;
+    map_limit_ready = unicorn_map_limit_signature_match(image, size);
+    if (!map_limit_ready && (width > 2880 || height > 1620))
+        printf("Battle map: unavailable (code signature); drawn at 2880x1620 at most\n");
     char text[16];
     set_render_scale_env("VW_NEO_MODE", "1", 0);
     snprintf(text, sizeof(text), "%u", width);
@@ -518,6 +521,16 @@ static void install_unicorn_render_scale(void) {
         else
             printf("Aspect ratio: %.3f (%ux%u), experimental\n", (double)width / height, width, height);
         protect(values, page_size, 4);
+    }
+    if (map_limit_ready && (width > 2880 || height > 1620)) {
+        const float widthf = (float)width, heightf = (float)height;
+        for (unsigned i = 0; i < 2; ++i) {
+            memcpy(image + unicorn_address(unicorn_map_width_imm[i]), &width, 4);
+            memcpy(image + unicorn_address(unicorn_map_height_imm[i]), &height, 4);
+        }
+        memcpy(image + unicorn_address(unicorn_map_width_float), &widthf, 4);
+        memcpy(image + unicorn_address(unicorn_map_height_float), &heightf, 4);
+        printf("Battle map: %ux%u (the game's Pro limit is 2880x1620)\n", width, height);
     }
     printf("Render scale: %ux%u (PS4 Pro path)\n", width, height);
 }

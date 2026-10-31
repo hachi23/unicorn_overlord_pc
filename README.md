@@ -53,7 +53,8 @@ builds and releases are made.
 ## Requirements
 
 - 64-bit Linux, or Windows 10 (1903+) / 11.
-- A Vulkan 1.3 GPU.
+- A Vulkan 1.3 GPU with sparse buffers (`sparseBinding`, `sparseResidencyBuffer`). AMD and NVIDIA
+  have them; Intel integrated graphics older than Gen12 (UHD 620 and alike) lack them on Linux.
 - Your own dump of the game with the 1.04 update merged in (or the Hong Kong 1.05 package), as a folder containing `eboot.bin`,
   `sce_module`, `sce_sys` and the `.CPK` files (about 7 GB).
 
@@ -114,7 +115,9 @@ your issue. No game files or saves are included.
 
 The game renders at 1920×1080 by default. Set another size in the menu (Performance, applied on
 restart) or with `VW_RENDER_SCALE`: `720p` and `900p` for weak GPUs, `1800p` and `4K`
-for smoother edges and sharper art. Every size uses the game's own PS4 Pro path (`VW_NEO_MODE=1`)
+for supersampling: the game is drawn larger and averaged down to the window, which gives smooth
+edges and sharper art (the port has no separate anti-aliasing setting; the game's art is mostly
+2D sprites, which anti-aliasing filters blur). Every size uses the game's own PS4 Pro path (`VW_NEO_MODE=1`)
 at that size, which lays out the 2D layers from the target size, so the framing and the HUD stay
 the same at every resolution.
 
@@ -137,6 +140,15 @@ template and attach:
 - screenshots of the battle map, a story scene with text, a menu, and anything stretched,
   cut off or misplaced (Win+Shift+S on Windows, Spectacle or your desktop's tool on Linux);
 - your monitor's resolution and the display mode (Windowed, Borderless or Fullscreen).
+
+### DLC
+
+Put the DLC you own in a `dlc` folder in the data directory (next to `vw.ini`): the PS4
+package as it is (for example `HP0177-CUSA36381_00-PRIVILEGEDEMBLEM-A0000-V0100.pkg`), or its
+extracted folder. A `.zip` must be unpacked first. At the next start the log lists each one
+(`DLC: PRIVILEGEDEMBLEM (...)`) and the game sees it as owned. Only the package's name is read:
+Unicorn Overlord's DLC unlocks content that is already in the game. The game's DLC menus
+show what it unlocked.
 
 ### Keyboard
 

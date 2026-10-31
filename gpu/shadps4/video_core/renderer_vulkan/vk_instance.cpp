@@ -265,6 +265,11 @@ bool Instance::CreateDevice() {
     ASSERT_MSG(add_extension(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME),
                "Required Vulkan extension unavailable: {}", VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
 
+    // vw: the buffer cache maps guest memory through sparse buffer arenas; without them the first
+    // vkQueueBindSparse loses the device (Intel Gen9 on Mesa, #55).
+    ASSERT_MSG(features.sparseBinding && features.sparseResidencyBuffer,
+               "Required Vulkan feature unavailable: sparseBinding and sparseResidencyBuffer "
+               "(sparse buffers)");
     const auto robustness2_features = feature_chain.get<vk::PhysicalDeviceRobustness2FeaturesEXT>();
     ASSERT_MSG(robustness2_features.robustBufferAccess2,
                "Required Vulkan feature unavailable: robustBufferAccess2");

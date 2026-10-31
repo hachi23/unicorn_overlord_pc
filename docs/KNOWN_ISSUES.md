@@ -30,11 +30,17 @@ top. Also the **Hong Kong 1.05 package** (`HP0177-CUSA36381_00-UNICORNOVERLORD0-
 the same code at other addresses, which `src/unicorn_build.h` maps. It has Traditional and
 Simplified Chinese, Korean and Japanese text, no English; tested to the opening scenes with every
 PC feature (Options rows, render resolution, 21:9, button icons, text language). The fan English patch only replaces the text files (`Unicorn_CN.CPK`, `Unicorn_TW.CPK`) and
-`param.sfo`; its `eboot.bin` is the official one, so both work.
+`param.sfo`; its `eboot.bin` is the official one, so both work. Setup recognizes the patch by
+its text, so both releases of it work: the first (one English file in both slots) and the second
+(#58: an update package with English in `Unicorn_TW.CPK` only, its 493 re-wrapped story lines and
+the 14 tutorial pictures in English; `Unicorn_CN.CPK` stays the official Simplified Chinese). The
+second spells its files `UnicornPatch.cpk` and `Unicorn_TW.cpk`: copied over the base on Linux,
+both spellings stay, and setup installs the patch's files under the names the game opens.
 
 Text language: the game picks it from the PS4 system language, and on any language but Korean or
-Chinese it shows Traditional Chinese (English with the English patch). **Text Language** in
-System > Options (or the Insert menu) picks Japanese, Traditional or Simplified Chinese at the next
+Chinese it shows Traditional Chinese (English with the English patch). With the first release
+of the patch both Chinese choices show English; with the second, Simplified Chinese is Chinese. **Text language** in
+the Insert menu (R3+L2 on a controller) picks Japanese, Traditional or Simplified Chinese at the next
 start. Voice language is the game's own Voice Language option.
 
 Korean: the Asia release has no Korean text. Its base game (01.00) and the 1.04 update both ship
@@ -109,7 +115,9 @@ Measured on the test system above, 1080p:
   reports of graphics errors on NVIDIA are very welcome. GTX 10-series (Pascal) cards have no
   fragment barycentrics and use a different integer-input workaround (`VW_INTERP_INT_FIX=0`
   turns it off).
-- Needs a Vulkan 1.3 GPU and a recent driver. macOS is not supported.
+- Needs a Vulkan 1.3 GPU with sparse buffers and a recent driver: older Intel integrated graphics
+  on Linux (Gen9, such as UHD 620) stop at start with "Required Vulkan feature unavailable" (#55). macOS is
+  not supported.
 
 ## Audio
 
@@ -133,7 +141,8 @@ Measured on the test system above, 1080p:
 - Remapping sticks, triggers and the menu shortcut. Buttons can be remapped in the in-game
   Controls tab and are saved in `vw.ini`. The `VW_KEY_MAP` (keyboard) and `VW_PAD_MAP`
   (controller) environment variables override saved bindings, e.g. `VW_KEY_MAP="cross=Q"`.
-- DLC and PS4 package (.pkg) installation: the port installs an already extracted game folder.
+- PS4 package (.pkg) installation of the game: the port installs an already extracted game
+  folder. DLC packages are read as they are (README, DLC).
 - The game's Options screen has the main PC settings; the GPU readback options, frames queued,
   background shader compilation, overlay layout and button remapping are only in the Insert menu.
 

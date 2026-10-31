@@ -19,6 +19,7 @@ static const struct { uint32_t start, end; int32_t shift; } unicorn_hk0105_range
     {0x3d9bd, 0x3e31d, 384},     /* render size getters */
     {0x1fdf80, 0x1fe000, 944},   /* CRILAYLA decompressor */
     {0x233df4, 0x234d1b, 960},   /* text language, 2D ortho */
+    {0x2377d0, 0x2379f0, 960},   /* battle map size limit */
     {0x2e0d9a, 0x2e186b, 2544},  /* battle map camera clamp */
     {0x3860e1, 0x38692b, 3008},  /* fade, haze */
     {0x735370, 0x73a01e, -9936}, /* Options screen */
