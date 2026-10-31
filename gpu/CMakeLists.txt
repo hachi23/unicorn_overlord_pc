@@ -130,6 +130,10 @@ add_host_shader(fs_tri.vert fs_tri_vert)
 add_host_shader(fsr.comp fsr_easu_comp SAMPLE_EASU=1)
 add_host_shader(fsr.comp fsr_rcas_comp SAMPLE_RCAS=1)
 add_host_shader(post_process.frag post_process_frag)
+# SMAA (third_party/smaa, MIT) through host_shaders/smaa/smaa.glsl.
+foreach(PASS IN ITEMS edge weight blend)
+    add_host_shader(smaa_${PASS}.frag smaa_${PASS}_frag)
+endforeach()
 include(${SHADER_SRC}/anime4k/shaders.cmake) # tools/anime4k.py
 add_host_shader(buffer_multi_copy.comp buffer_multi_copy_comp)
 foreach(BPP IN ITEMS 8 16 32 64 96 128)

@@ -25,6 +25,8 @@ struct Values {
     std::atomic<bool> vsync{true};
     std::atomic<bool> async_shaders{true};
     std::atomic<bool> fsr1{false};
+    /// SMAA anti-aliasing on the game's image, before Anime4K.
+    std::atomic<bool> smaa{false};
     /// Anime4K preset (VwGraphics::Anime4k), before FSR 1.
     std::atomic<int> anime4k{0};
     std::atomic<bool> rcas{true};

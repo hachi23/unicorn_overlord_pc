@@ -17,7 +17,7 @@ VENDORED = {
     'magic_enum': 'gpu/third_party/magic_enum/LICENSE', 'miniz': 'gpu/third_party/miniz/LICENSE',
     'xbyak': 'gpu/third_party/xbyak/COPYRIGHT', 'half': 'gpu/third_party/half/LICENSE.txt',
     'DejaVu': 'gpu/third_party/fonts/LICENSE-DejaVu.txt',
-    'Anime4K': 'gpu/third_party/anime4k/LICENSE',
+    'Anime4K': 'gpu/third_party/anime4k/LICENSE', 'SMAA': 'gpu/third_party/smaa/LICENSE.txt',
 }
 STATIC = ('zlib', 'xxhash', 'fmt', 'zycore', 'zydis', 'sdl3', 'ffmpeg')
 

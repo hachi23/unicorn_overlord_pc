@@ -150,6 +150,7 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
         free_queue.push(&frame);
     }
 
+    smaa_pass.Create(device, instance.GetAllocator());
     anime4k_pass.Create(device, instance.GetAllocator());
     fsr_pass.Create(device, instance.GetAllocator(), num_images);
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
@@ -453,12 +454,14 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const auto& graphics = VwSettings::Get();
     // vw: Anime4K first (#32): it restores the game's image and may double its size; FSR 1,
     // sharpening and the scaling then work on its result. An sRGB view samples linear light.
+    // SMAA before it, on the game's own pixels.
     const vk::Extent2D game_size = image_size;
     if (!frame->is_hdr) {
+        const bool linear = view_info.format == vk::Format::eR8G8B8A8Srgb ||
+                            view_info.format == vk::Format::eB8G8R8A8Srgb;
+        image_view = smaa_pass.Render(cmdbuf, image_view, image_size, graphics.smaa, linear);
         image_view = anime4k_pass.Render(cmdbuf, image_view, image_size, {frame->width, frame->height},
-                                         graphics.anime4k,
-                                         view_info.format == vk::Format::eR8G8B8A8Srgb ||
-                                             view_info.format == vk::Format::eB8G8R8A8Srgb);
+                                         graphics.anime4k, linear);
     }
     fsr_settings.enable = graphics.fsr1;
     fsr_settings.use_rcas = graphics.rcas;

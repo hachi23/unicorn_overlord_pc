@@ -11,9 +11,9 @@ import zipfile
 LAUNCH_KEYS = ('VW_PATCHES', 'VW_PATCHES_ONLY', 'VW_RENDER_SCALE', 'VW_ASPECT_RATIO', 'VW_NEO_MODE',
                'VW_VBLANK_HZ', 'VW_DMEM_MB', 'VW_DEFERRED_READBACK', 'VW_STALE_READBACK',
                'VW_ASYNC_SHADERS', 'VW_GPU_LOG', 'VW_HANG_DUMP', 'VW_MODS_ENABLED',
-               'VW_FSR1', 'VW_ANIME4K', 'VW_RCAS', 'VW_FRAMES_AHEAD', 'VW_FPS_LIMIT', 'VW_TEXT_LANGUAGE')
+               'VW_FSR1', 'VW_SMAA', 'VW_ANIME4K', 'VW_RCAS', 'VW_FRAMES_AHEAD', 'VW_FPS_LIMIT', 'VW_TEXT_LANGUAGE')
 SETTING_KEYS = ('render_resolution', 'aspect_ratio', 'deferred_readback', 'stale_readback', 'async_shaders',
-                'display_mode', 'vsync', 'fsr1', 'anime4k', 'rcas', 'rcas_strength',
+                'display_mode', 'vsync', 'fsr1', 'smaa', 'anime4k', 'rcas', 'rcas_strength',
                 'frames_queued', 'stick_dead_zone', 'show_fps', 'overlay_fps', 'overlay_frametime', 'overlay_scale',
                 'text_language', 'button_icons')
 

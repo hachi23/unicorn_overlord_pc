@@ -287,6 +287,9 @@ void ImageTab() {
     const bool rcas_blocked = s.rcas && !s.rcas_applied;
     ImGui::SeparatorText("Scaling and sharpening");
     if (BeginRows("##scaling")) {
+        CheckRow("Anti-aliasing (SMAA)", s.smaa,
+                 "Smooths jagged edges in the game's image, at any render resolution. Runs before Anime4K "
+                 "and FSR 1.");
         ChoiceRow("Anime4K", s.anime4k, G::Anime4kNames.data(), nullptr, G::Anime4kCount,
                   "Redraws the game's lines and art sharper. When the window is larger than the game's image "
                   "it also doubles the image, before FSR 1. Quality costs the most GPU time.");
