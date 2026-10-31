@@ -136,6 +136,25 @@ class ModTests(unittest.TestCase):
             self.assertEqual(fms.parse(mods.cpk.Archive(self.game / name).read('MsgSheet/UcOption.fms')),
                              ['Options', 'Music Volume', 'Off'])
 
+    def test_switch_story_lines_rewrapped_for_ps4_boxes(self):
+        import fms
+        merge = {'archives': ('Unicorn_US.CPK',), 'into': ('Unicorn_TW.CPK',),
+                 'rewrap': ('MsgSheet/UcScriptMsgConv.fms',)}
+        template = fms.build(['', '', ''], b'FMSB' + bytes(4) + (0x20).to_bytes(4, 'little') + bytes(8)
+                             + (3).to_bytes(4, 'little') + (3).to_bytes(4, 'little') + bytes(4))
+        ps4 = ['I beg you, my queen. Take leave of this place\nwhile you\'re still able.', 'Wait.',
+               'A help page the game wraps by itself, ' * 3]
+        switch = ['Eu lhe imploro, minha rainha. #w(30)Deixe este lugar enquanto ainda pode.',
+                  'Espere.', 'Uma página de ajuda que o jogo quebra sozinho, ' * 3]
+        self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcScriptMsgConv.fms': fms.build(ps4, template)})
+        (self.moddir / 'A').mkdir(parents=True)
+        self.archive(self.moddir / 'A' / 'Unicorn_US.CPK', {'MsgSheet/UcScriptMsgConv.fms': fms.build(switch, template)})
+        with mock.patch.object(mods, 'archive_merge', return_value=merge):
+            result = mods.build_overlay(self.game, self.root / 'out', [('A', self.moddir / 'A')])
+        text = fms.parse(mods.cpk.Archive(result / 'Unicorn_TW.CPK').read('MsgSheet/UcScriptMsgConv.fms'))
+        self.assertEqual(text, ['Eu lhe imploro, minha rainha. #w(30)Deixe este lugar\nenquanto ainda pode.',
+                                'Espere.', switch[2]])
+
     def test_translation_entry_out_of_range_rejected(self):
         import fms
         merge = {'archives': (), 'into': ('Unicorn_TW.CPK',), 'folders': ('MsgSheet',)}

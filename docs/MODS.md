@@ -71,8 +71,12 @@ later one in the order wins.
 - Mods that replace the Switch's `Unicorn.CPK` or other archives, and the Switch `exefs`, are
   not supported.
 - With the text language `japanese` no language archive is read, so the mod has no effect.
-- The Switch text sometimes has longer lines than the fan patch, which re-wrapped some of them
-  for the PS4 layout (the start-up warning runs past the screen edges).
+- The Switch story text (`UcScriptMsgConv`) mostly has no line breaks, and the PS4 dialogue
+  boxes do not add them: lines over 54 characters are broken at spaces when the archive is
+  merged, as the PS4 text is. Menus and other sheets are left as they are, so a long translated
+  menu text may still run past its box (the start-up warning runs past the screen edges).
+- Checked in game with a Brazilian Portuguese Switch translation: title menu and opening
+  dialogue, accented letters (ã, ç, é, í) included.
 
 ## Unicorn Overlord: translations
 
@@ -107,8 +111,8 @@ At each start the sheets are merged into the language archives the game reads
 order, entry by entry: a later mod's entry wins. Turn a translation off in `mods.json` like any
 mod.
 
-- The fonts are the game's: a character they lack shows as a box. The English patch's fonts
-  cover English; accented letters and other scripts are untested.
+- The fonts are the game's: a character they lack shows as a box. The dialogue and menu fonts
+  have the Latin accented letters (checked with Portuguese); other scripts are untested.
 - Text longer than the original may run past its box.
 - With the text language `japanese` no language archive is read, so the translation has no
   effect.

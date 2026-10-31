@@ -15,6 +15,7 @@ texts, delete the entries left as they are if you like, and put the folder in mo
 import argparse
 import json
 from pathlib import Path
+import re
 import struct
 import sys
 
@@ -71,6 +72,40 @@ def apply(data, overrides, name='sheet'):
             raise ValueError(f'{name}: entry {key} is not text')
         strings[int(key)] = text
     return build(strings, data)
+
+
+# Inline codes take no room: #w(30) pause, #c(13)..#/c colour, #s(..), #FN(..), #i..#/i italics.
+CODE = re.compile(r'#[A-Za-z]{1,2}\([^)]*\)|#/[A-Za-z]+|#i(?=\S)')
+WRAP = 54  # the PS4 story text breaks its lines by hand, 99% of them at 54 characters or less
+
+
+def visible(line):
+    return len(CODE.sub('', line))
+
+
+def rewrap(strings, reference, width=WRAP):
+    """`strings` with lines longer than `width` broken at spaces: the Switch text leaves most
+    breaks out, and the PS4 game does not add them in its story boxes. Entries whose text in
+    `reference` (the PS4 sheet) already has a longer line are left as they are (a box that
+    takes long lines, or wraps them itself)."""
+    out = []
+    for text, ref in zip(strings, reference):
+        if any(visible(line) > width for line in ref.split('\n')):
+            out.append(text)
+            continue
+        limit, lines = width, []
+        for line in text.split('\n'):
+            while visible(line) > limit and ' ' in line:
+                cut = line.rfind(' ')
+                while cut > 0 and visible(line[:cut]) > limit:
+                    cut = line.rfind(' ', 0, cut)
+                if cut <= 0:
+                    break
+                lines.append(line[:cut])
+                line = line[cut + 1:]
+            lines.append(line)
+        out.append('\n'.join(lines))
+    return out
 
 
 def export(game, out, archive_name='Unicorn_TW.CPK'):

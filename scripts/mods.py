@@ -180,14 +180,21 @@ def expand(directory):
         directory.mkdir(exist_ok=True)
 
 
+def child_name(archive, name):
+    """`name` as `archive` spells it."""
+    return next(n for n in archive.files if n.casefold() == name.casefold())
+
+
 def merge_archives(overlay, merge, archives, loose=()):
     """Writes each of the game's merge['into'] archives in `overlay` again with the files of
     `archives` ((mod, path) in mod order: a later mod's file wins) in place of or beside its own,
     leaving out names ending in merge['skip']. Then the `loose` files ((mod, path in the
     archive, source) in mod order): a .fms sheet replaces the archive's, a .json one replaces
-    the entries it lists (fms.apply)."""
+    the entries it lists (fms.apply). The merge['rewrap'] sheets an archive brings get line
+    breaks where the PS4 boxes need them (fms.rewrap)."""
     import fms
     sources = [(mod, cpk.Archive(path)) for mod, path in archives]
+    rewrapped = {}  # the same sheet for each target archive
     mods = list(dict.fromkeys([m for m, _ in archives] + [m for m, _, _ in loose]))
     for target in merge['into']:
         destination = child(overlay, target)
@@ -204,6 +211,17 @@ def merge_archives(overlay, merge, archives, loose=()):
                 files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
                 taken.add(name.casefold())
         memory = cpk.Memory()
+        for sheet in merge.get('rewrap', ()):
+            spelling, archive, original = files.get(sheet.casefold(), (None, base, None))
+            if archive is base:
+                continue
+            key = (id(archive), original)
+            if key not in rewrapped:
+                ours = fms.parse(cpk.crilayla(base.read(child_name(base, sheet))))
+                theirs = cpk.crilayla(archive.read(original))
+                rewrapped[key] = fms.build(fms.rewrap(fms.parse(theirs), ours), theirs)
+            memory.add(spelling, rewrapped[key])
+            files[sheet.casefold()] = (spelling, memory, spelling)
         for mod, name, source in loose:
             sheet = name.rsplit('.', 1)[0] + '.fms'
             if sheet.casefold() not in files:
