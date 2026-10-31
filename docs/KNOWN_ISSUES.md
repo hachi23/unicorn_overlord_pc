@@ -109,7 +109,9 @@ Measured on the test system above, 1080p:
   reports of graphics errors on NVIDIA are very welcome. GTX 10-series (Pascal) cards have no
   fragment barycentrics and use a different integer-input workaround (`VW_INTERP_INT_FIX=0`
   turns it off).
-- Needs a Vulkan 1.3 GPU and a recent driver. macOS is not supported.
+- Needs a Vulkan 1.3 GPU with sparse buffers and a recent driver: older Intel integrated graphics
+  on Linux (Gen9, such as UHD 620) stop at start with "Required Vulkan feature unavailable" (#55). macOS is
+  not supported.
 
 ## Audio
 

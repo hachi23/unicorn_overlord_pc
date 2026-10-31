@@ -53,7 +53,8 @@ builds and releases are made.
 ## Requirements
 
 - 64-bit Linux, or Windows 10 (1903+) / 11.
-- A Vulkan 1.3 GPU.
+- A Vulkan 1.3 GPU with sparse buffers (`sparseBinding`, `sparseResidencyBuffer`). AMD and NVIDIA
+  have them; Intel integrated graphics older than Gen12 (UHD 620 and alike) lack them on Linux.
 - Your own dump of the game with the 1.04 update merged in (or the Hong Kong 1.05 package), as a folder containing `eboot.bin`,
   `sce_module`, `sce_sys` and the `.CPK` files (about 7 GB).
 

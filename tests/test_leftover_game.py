@@ -28,6 +28,12 @@ class LeftoverGame(unittest.TestCase):
     def test_other_failures_get_no_hint(self):
         self.assertEqual(vw_launcher.failure_hint('[    2.000] Fault: read access to 0000000000000010\n'), '')
 
+    def test_gpu_feature_hint(self):
+        log = ('[    0.846] GPU [Debug] <Critical> vk_instance.cpp:271 CreateDevice: Assertion Failed!\n'
+               'Required Vulkan feature unavailable: sparseBinding and sparseResidencyBuffer (sparse buffers)\n'
+               '[    0.846] STOP: GPU library assertion failed (see GPU log above)\n')
+        self.assertEqual(vw_launcher.failure_hint(log), vw_launcher.GPU_HINT)
+
 
 if __name__ == '__main__':
     unittest.main()

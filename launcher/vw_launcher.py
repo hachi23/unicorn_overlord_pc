@@ -453,9 +453,16 @@ MEMORY_HINT = ('Windows could not give the game the memory it needs (about 6 GB 
                'with Alt+F4 can stay). If it keeps happening, let Windows manage the page file size.\n\n')
 
 
+GPU_HINT = ('The graphics card or its driver lacks a Vulkan feature the game needs (the log names it: '
+            '"Required Vulkan ... unavailable"). Update the graphics driver. If it still fails, this '
+            'graphics card cannot run the port.\n\n')
+
+
 def failure_hint(log_text):
     """An explanation for a failure the log shows, or ''."""
-    return MEMORY_HINT if 'of guest memory (error' in log_text else ''
+    if 'of guest memory (error' in log_text:
+        return MEMORY_HINT
+    return GPU_HINT if 'Required Vulkan ' in log_text and ' unavailable' in log_text else ''
 
 
 def parse_tasklist(output):
