@@ -53,7 +53,7 @@ GAMES = {
         'name': 'Unicorn Overlord', 'title': 'Unicorn Overlord', 'run_dir': 'run_uo',
         'colors': {'bg': '#0a1222', 'gold': '#c8a254', 'gold_hi': '#f0d48a'},
         # Both have the same eboot.bin; the fan English patch replaces the Chinese text files
-        # with one English file in both slots (docs/KNOWN_ISSUES.md). text_language: vw.ini.
+        # (docs/KNOWN_ISSUES.md, english_text). text_language: vw.ini.
         'dumps': {
             'english': {
                 'label': 'Asia version with the fan English patch',
@@ -142,24 +142,37 @@ def check_game(game_info, folder):
     return True, f'{name}  ·  {title_id}  ·  {build}'
 
 
-def detect_dump(folder):
-    """'english' when Unicorn_CN.CPK and Unicorn_TW.CPK are the same file (the English patch puts
-    its text in both), else 'asia'. Names are matched without case, as the game does."""
-    import hashlib
+def english_text(folder):
+    """The Chinese text archives ('cn', 'tw') of a dump that hold English text: the fan English
+    patch puts its text there (version 1: the same file in both; later versions need not). Read
+    from MsgSheet/UcSysMsg.fms: mostly Latin letters, or mostly CJK (UTF-8 lead bytes E0-EF).
+    Names are matched without case, as the game does."""
+    import cpk
     files = {}
     try:
         for entry in Path(folder).iterdir():
             files[entry.name.lower()] = entry
     except OSError:
-        return 'asia'
-    cn, tw = files.get('unicorn_cn.cpk'), files.get('unicorn_tw.cpk')
-    try:
-        if not cn or not tw or cn.stat().st_size != tw.stat().st_size:
-            return 'asia'
-        digests = [hashlib.sha256(path.read_bytes()).digest() for path in (cn, tw)]
-    except OSError:
-        return 'asia'
-    return 'english' if digests[0] == digests[1] else 'asia'
+        return set()
+    found = set()
+    for key in ('cn', 'tw'):
+        path = files.get(f'unicorn_{key}.cpk')
+        if not path:
+            continue
+        try:
+            text = cpk.Archive(path).extract('MsgSheet/UcSysMsg.fms')
+        except (OSError, ValueError, KeyError):
+            continue
+        latin = sum(text.count(c) for c in b'etaoinsrhl')
+        cjk = sum(1 for b in text if 0xe0 <= b <= 0xef)
+        if latin > cjk:
+            found.add(key)
+    return found
+
+
+def detect_dump(folder):
+    """'english' when the fan English patch is in the dump (english_text), else 'asia'."""
+    return 'english' if english_text(folder) else 'asia'
 
 
 def choose_dump(game_info, root, kind=None, language=None):
@@ -769,6 +782,8 @@ def main(key):
             sys.exit(0)
         folder, dump, language = chosen
         settings['source_dir'] = folder
+        if dump == 'english' and language == 'auto' and english_text(folder) == {'cn'}:
+            language = 'simplified_chinese'  # the game binds Unicorn_TW.CPK by default
         if dump:
             import graphics_options
             settings.update(dump=dump, text_language=language)

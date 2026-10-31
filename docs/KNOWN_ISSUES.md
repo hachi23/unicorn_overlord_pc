@@ -30,7 +30,8 @@ top. Also the **Hong Kong 1.05 package** (`HP0177-CUSA36381_00-UNICORNOVERLORD0-
 the same code at other addresses, which `src/unicorn_build.h` maps. It has Traditional and
 Simplified Chinese, Korean and Japanese text, no English; tested to the opening scenes with every
 PC feature (Options rows, render resolution, 21:9, button icons, text language). The fan English patch only replaces the text files (`Unicorn_CN.CPK`, `Unicorn_TW.CPK`) and
-`param.sfo`; its `eboot.bin` is the official one, so both work.
+`param.sfo`; its `eboot.bin` is the official one, so both work. Setup recognizes the patch by
+its text, so both releases of it work: the first (one file in both slots) and the second (#58).
 
 Text language: the game picks it from the PS4 system language, and on any language but Korean or
 Chinese it shows Traditional Chinese (English with the English patch). **Text language** in
