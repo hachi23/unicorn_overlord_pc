@@ -1,6 +1,5 @@
 import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
 
 import paths
@@ -26,11 +25,9 @@ class DumpKindTest(unittest.TestCase):
         """A CPK holding MsgSheet/UcSysMsg.fms, stored as is."""
         sys.path.insert(0, str(paths.ROOT / 'scripts'))
         import cpk
-        blob = self.game / (name + '.blob')
-        blob.write_bytes(text)
-        source = mock.Mock(path=blob, files={'MsgSheet/UcSysMsg.fms': (0, len(text), len(text))})
+        source = cpk.Memory()
+        source.add('MsgSheet/UcSysMsg.fms', text)
         cpk.write(self.game / name, {'MsgSheet/UcSysMsg.fms': (source, 'MsgSheet/UcSysMsg.fms')})
-        blob.unlink()
 
     def test_english_patch_v1(self):
         # The same file in both slots, under the patch's lower-case name.

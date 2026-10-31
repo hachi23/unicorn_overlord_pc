@@ -126,6 +126,28 @@ class Archive:
         return crilayla(self.read(name))
 
 
+class Memory:
+    """Files held in memory, written into an archive as they are (not compressed)."""
+
+    def __init__(self):
+        self.path, self.files, self.data = None, {}, {}
+
+    def add(self, name, data):
+        self.files[name] = (0, len(data), len(data))
+        self.data[name] = data
+
+    def read(self, name):
+        return self.data[name]
+
+
+def child_file(folder, name):
+    """`name` in `folder`, matched without case as the game does."""
+    for entry in Path(folder).iterdir():
+        if entry.name.casefold() == name.casefold():
+            return entry
+    raise OSError(f'{name} not found in {folder}')
+
+
 def crilayla(data):
     """CRILAYLA decompression; other data is returned as is. The stream is read from its end
     backwards, bits from the top, and fills the output from its end; the first 0x100 bytes are
@@ -228,17 +250,11 @@ def write(out, files):
         f.write(head + table + b'\0' * (content - ALIGN - len(table)))
         for name in names:
             source, original = files[name]
-            offset, size, _ = source.files[original]
-            with open(source.path, 'rb') as src:
-                src.seek(offset)
-                remaining = size
-                while remaining:
-                    block = src.read(min(remaining, 1 << 20))
-                    if not block:
-                        raise ValueError(f'{source.path.name}: {original} is cut short')
-                    f.write(block)
-                    remaining -= len(block)
-            f.write(b'\0' * (-size % ALIGN))
+            size = source.files[original][1]
+            data = source.read(original)
+            if len(data) != size:
+                raise ValueError(f'{original} is cut short')
+            f.write(data + b'\0' * (-size % ALIGN))
 
 
 def main():

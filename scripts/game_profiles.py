@@ -21,6 +21,9 @@ PROFILES = {
             'archives': ('Unicorn_US.CPK', 'Unicorn_FR.CPK', 'Unicorn_DE.CPK', 'Unicorn_IT.CPK', 'Unicorn_ES.CPK'),
             'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'),
             'skip': ('.ftx',),
+            # Translations: loose MsgSheet/<Sheet>.json (entry number -> text) or .fms files in a
+            # mod, merged into the same archives (docs/MODS.md, Translations).
+            'folders': ('MsgSheet',),
         },
     },
 }

@@ -86,14 +86,10 @@ class ModTests(unittest.TestCase):
 
     def archive(self, path, files):
         """A CPK of `files` (name -> bytes), stored uncompressed."""
-        blob = Path(str(path) + '.blob')
-        blob.write_bytes(b''.join(files.values()))
-        source, at = mock.Mock(path=blob, files={}), 0
+        source = mods.cpk.Memory()
         for name, data in files.items():
-            source.files[name] = (at, len(data), len(data))
-            at += len(data)
+            source.add(name, data)
         mods.cpk.write(path, {name: (source, name) for name in files})
-        blob.unlink()
 
     def test_switch_text_archive_merged_into_language_archives(self):
         merge = {'archives': ('Unicorn_US.CPK',), 'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'skip': ('.ftx',)}
@@ -114,6 +110,42 @@ class ModTests(unittest.TestCase):
             self.assertEqual(archive.read('GUI/Interface.mbs'), b'ps4 ui')
             self.assertEqual(mods.cpk.Archive(self.game / name).read('MsgSheet/UcSysMsg.fms'), b'old text')
         self.assertFalse((result / 'Unicorn_US.CPK').exists())
+
+    def test_translation_sheets_merged_into_language_archives(self):
+        import fms
+        merge = {'archives': (), 'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'folders': ('MsgSheet',)}
+        template = fms.build(['', '', ''], b'FMSB' + bytes(4) + (0x20).to_bytes(4, 'little') + bytes(8)
+                             + (3).to_bytes(4, 'little') + (3).to_bytes(4, 'little') + bytes(4))
+        sheet = fms.build(['Options', 'Music Volume', 'Off'], template)
+        for name in ('Unicorn_TW.CPK', 'Unicorn_CN.cpk'):
+            self.archive(self.game / name, {'MsgSheet/UcOption.fms': sheet, 'GUI/Interface.mbs': b'ui'})
+        a, b = self.moddir / 'A' / 'MsgSheet', self.moddir / 'B' / 'MsgSheet'
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+        (a / 'UcOption.json').write_text('{"0": "Opciones", "2": "No"}', encoding='utf-8')
+        (a / 'README.txt').write_text('ignored')
+        (b / 'ucoption.json').write_text('{"1": "Volumen de la música"}', encoding='utf-8')
+        with mock.patch.object(mods, 'archive_merge', return_value=merge):
+            names = mods.game_names(self.game)
+            self.assertEqual(mods.discover(self.moddir, names), ['A', 'B'])
+            result = mods.build_overlay(self.game, self.root / 'out', [('A', self.moddir / 'A'), ('B', self.moddir / 'B')])
+        for name in ('Unicorn_TW.CPK', 'Unicorn_CN.cpk'):
+            archive = mods.cpk.Archive(result / name)
+            self.assertEqual(set(archive.files), {'MsgSheet/UcOption.fms', 'GUI/Interface.mbs'})
+            self.assertEqual(fms.parse(archive.read('MsgSheet/UcOption.fms')), ['Opciones', 'Volumen de la música', 'No'])
+            self.assertEqual(fms.parse(mods.cpk.Archive(self.game / name).read('MsgSheet/UcOption.fms')),
+                             ['Options', 'Music Volume', 'Off'])
+
+    def test_translation_entry_out_of_range_rejected(self):
+        import fms
+        merge = {'archives': (), 'into': ('Unicorn_TW.CPK',), 'folders': ('MsgSheet',)}
+        template = b'FMSB' + bytes(4) + (0x20).to_bytes(4, 'little') + bytes(8) + (1).to_bytes(4, 'little') + bytes(8)
+        self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcOption.fms': fms.build(['Options'], template)})
+        folder = self.moddir / 'A' / 'MsgSheet'
+        folder.mkdir(parents=True)
+        (folder / 'UcOption.json').write_text('{"5": "x"}', encoding='utf-8')
+        with mock.patch.object(mods, 'archive_merge', return_value=merge), self.assertRaises(ValueError):
+            mods.build_overlay(self.game, self.root / 'out', [('A', self.moddir / 'A')])
 
     def test_executable_replacement_rejected(self):
         a = self.mod('A')

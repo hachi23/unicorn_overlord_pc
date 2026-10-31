@@ -24,7 +24,8 @@ installation:
 
 Arguments: --choose-game asks for the game folder again; --after PID first waits for that
 process to end (the in-game "Change game folder" restart); --export-diagnostics only saves a
-diagnostics ZIP of the newest run (works while the game is still running); --finish-update
+diagnostics ZIP of the newest run (works while the game is still running); --export-text
+[FOLDER] writes the game's text as a translation mod to edit (docs/MODS.md); --finish-update
 FOLDER (with --after) is the second half of a Windows update (scripts/updates.py).
 
 Packaged, each start first looks for a newer release (unless check_updates=0 in vw.ini) and
@@ -754,6 +755,29 @@ def restore_library_path():
         os.environ['LD_LIBRARY_PATH'] = original
 
 
+def export_text(game_info, data, out):
+    """--export-text [FOLDER]: the game's text as JSON sheets in a new translation mod
+    (scripts/fms.py; default data/mods/My translation), from the archive the text language binds."""
+    import fms
+    from tkinter import messagebox
+    settings = load_settings(data)
+    folder = Path(out[0]) if out else data / 'mods' / 'My translation'
+    archive = 'Unicorn_CN.CPK' if settings.get('text_language') == 'simplified_chinese' else 'Unicorn_TW.CPK'
+    root = tk_root()
+    try:
+        count = fms.export(settings.get('game_dir', ''), folder, archive)
+        messagebox.showinfo(game_info['name'], f'{count} text sheets from {archive} written to\n'
+                            f'{folder / "MsgSheet"}\n\nEdit the texts there (UTF-8 JSON); the mod is '
+                            'used at the next start. docs/MODS.md (Translations) explains the format.',
+                            parent=root)
+        return 0
+    except (OSError, ValueError, KeyError) as error:
+        messagebox.showerror(game_info['name'], f'Could not export the text: {error}', parent=root)
+        return 1
+    finally:
+        root.destroy()
+
+
 def main(key):
     """Runs the setup and the game for GAMES[key], or one of the packaged roles (--run, --script)."""
     restore_library_path()
@@ -773,6 +797,8 @@ def main(key):
         finally:
             root.destroy()
         sys.exit(0)
+    if '--export-text' in args:
+        sys.exit(export_text(game_info, data, args[args.index('--export-text') + 1:][:1]))
     settings = load_settings(data)
     folder = settings.get('game_dir')
     if '--choose-game' in args or not check_game(game_info, folder)[0]:

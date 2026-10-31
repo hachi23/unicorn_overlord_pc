@@ -35,11 +35,11 @@ def archive_merge(game):
 
 def game_names(game):
     """Case-folded names of the game folder's top-level content (CPK archives, data folders,
-    ...) and the archives a mod may bring to be merged into the game's (archive_merge): the
-    paths a mod may replace or add under."""
+    ...), the archives a mod may bring to be merged into the game's (archive_merge) and the
+    folders of loose files merged the same way: the paths a mod may replace or add under."""
     merge = archive_merge(game) or {}
     return ({e.name.casefold() for e in Path(game).iterdir()} - set(SYSTEM) |
-            {name.casefold() for name in merge.get('archives', ())})
+            {name.casefold() for name in (*merge.get('archives', ()), *merge.get('folders', ()))})
 
 
 def content_root(folder, names):
@@ -180,11 +180,15 @@ def expand(directory):
         directory.mkdir(exist_ok=True)
 
 
-def merge_archives(overlay, merge, archives):
+def merge_archives(overlay, merge, archives, loose=()):
     """Writes each of the game's merge['into'] archives in `overlay` again with the files of
     `archives` ((mod, path) in mod order: a later mod's file wins) in place of or beside its own,
-    leaving out names ending in merge['skip']."""
+    leaving out names ending in merge['skip']. Then the `loose` files ((mod, path in the
+    archive, source) in mod order): a .fms sheet replaces the archive's, a .json one replaces
+    the entries it lists (fms.apply)."""
+    import fms
     sources = [(mod, cpk.Archive(path)) for mod, path in archives]
+    mods = list(dict.fromkeys([m for m, _ in archives] + [m for m, _, _ in loose]))
     for target in merge['into']:
         destination = child(overlay, target)
         if not is_link(destination):
@@ -199,9 +203,28 @@ def merge_archives(overlay, merge, archives):
                     continue
                 files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
                 taken.add(name.casefold())
+        memory = cpk.Memory()
+        for mod, name, source in loose:
+            sheet = name.rsplit('.', 1)[0] + '.fms'
+            if sheet.casefold() not in files:
+                raise ValueError(f'{mod}: {name}: {destination.name} has no {sheet}')
+            spelling, archive, original = files[sheet.casefold()]
+            if name.casefold().endswith('.json'):
+                try:
+                    overrides = json.loads(source.read_text(encoding='utf-8-sig'))
+                except json.JSONDecodeError as error:
+                    raise ValueError(f'{mod}: {name}: {error}') from None
+                current = memory.read(original) if archive is memory else cpk.crilayla(archive.read(original))
+                data = fms.apply(current, overrides, f'{mod}: {name}')
+            else:
+                data = source.read_bytes()
+                fms.parse(data)
+            memory.add(spelling, data)
+            files[sheet.casefold()] = (spelling, memory, spelling)
+            taken.add(sheet.casefold())
         remove_link(destination)
         cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
-        print(f'Mods: {destination.name}: {len(taken)} files from {", ".join(m for m, _ in archives)}'
+        print(f'Mods: {destination.name}: {len(taken)} files from {", ".join(mods)}'
               f'{f", {skipped} left out (another platform)" if skipped else ""}', file=sys.stderr)
 
 
@@ -210,8 +233,10 @@ def build_overlay(game, out, mods):
     names = game_names(game)
     merge = archive_merge(game) or {}
     merged = {name.casefold() for name in merge.get('archives', ())}
+    folders = {name.casefold() for name in merge.get('folders', ())}
     replacements = []
     archives = []
+    loose = []
     owners = {}
     for name, root in mods:
         count = 0
@@ -220,6 +245,12 @@ def build_overlay(game, out, mods):
                 archives.append((name, source))
                 count += 1
                 continue
+            if relative.parts[0].casefold() in folders:
+                # A translation's sheets; anything else there (a readme) stays out.
+                if len(relative.parts) == 2 and relative.suffix.casefold() in ('.json', '.fms'):
+                    loose.append((name, relative.as_posix(), source))
+                    count += 1
+                continue
             key = relative.as_posix().casefold()
             if key in owners:
                 print(f'Mods: {relative}: {owners[key]} -> {name}', file=sys.stderr)
@@ -227,7 +258,7 @@ def build_overlay(game, out, mods):
             replacements.append((relative, source))
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
-    if not replacements and not archives:
+    if not replacements and not archives and not loose:
         return game
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -255,8 +286,8 @@ def build_overlay(game, out, mods):
                 added += 1
             make_link(destination, source)
         print(f'Mods: {replaced} game files replaced, {added} added', file=sys.stderr)
-        if archives:
-            merge_archives(overlay, merge, archives)
+        if archives or loose:
+            merge_archives(overlay, merge, archives, loose)
         return overlay
     except BaseException:
         shutil.rmtree(overlay)
