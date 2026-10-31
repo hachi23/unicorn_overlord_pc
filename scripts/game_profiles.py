@@ -13,6 +13,15 @@ PROFILES = {
         # The bundled PSN libraries run natively: their C++ toolkit then reaches the runtime only
         # through the PSN C APIs, which answer as signed out.
         'native_modules': ('libSceNpToolkit2.prx', 'libSceNpCppWebApi.prx', 'libSceJobManager.prx'),
+        # Switch text mods: the Switch version's language archives hold the same text files
+        # (MsgSheet/*.fms). A mod's archive is merged into the ones this version binds (English
+        # with the fan patch, else Chinese) instead of being added; its textures (.ftx, NVT on the
+        # Switch, GNF here) are left out. The text language japanese binds neither.
+        'mod_archive_merge': {
+            'archives': ('Unicorn_US.CPK', 'Unicorn_FR.CPK', 'Unicorn_DE.CPK', 'Unicorn_IT.CPK', 'Unicorn_ES.CPK'),
+            'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'),
+            'skip': ('.ftx',),
+        },
     },
 }
 

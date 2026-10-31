@@ -33,8 +33,8 @@ PC feature (Options rows, render resolution, 21:9, button icons, text language).
 `param.sfo`; its `eboot.bin` is the official one, so both work.
 
 Text language: the game picks it from the PS4 system language, and on any language but Korean or
-Chinese it shows Traditional Chinese (English with the English patch). **Text Language** in
-System > Options (or the Insert menu) picks Japanese, Traditional or Simplified Chinese at the next
+Chinese it shows Traditional Chinese (English with the English patch). **Text language** in
+the Insert menu (R3+L2 on a controller) picks Japanese, Traditional or Simplified Chinese at the next
 start. Voice language is the game's own Voice Language option.
 
 Korean: the Asia release has no Korean text. Its base game (01.00) and the 1.04 update both ship

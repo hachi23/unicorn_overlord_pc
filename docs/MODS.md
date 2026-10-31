@@ -47,6 +47,33 @@ enabled and go to the end of the list, in alphabetical order.
 | `VW_MODS_ENABLED=0` | Starts without any mod. |
 | `VW_MODS_CONFIG` | Another `mods.json`. |
 
+## Unicorn Overlord: Switch text mods
+
+The Switch version keeps its English text in `Unicorn_US.CPK` (`MsgSheet/*.fms`), in the same
+format as the PS4 version (the fan English patch is that text). A Switch text mod that ships
+`Unicorn_US.CPK` works as is: put the file in its own mod folder,
+
+```text
+mods/
+  UO Text Fixes/
+    Unicorn_US.CPK
+```
+
+Its files are merged into the PS4 language archives the game reads, `Unicorn_TW.CPK` and
+`Unicorn_CN.CPK`, and replace their text. The rest of those archives stays (the fan patch's
+English interface). The log shows, for example,
+`Mods: Unicorn_TW.CPK: 33 files from UO Text Fixes, 14 left out (another platform)`.
+`Unicorn_FR/DE/IT/ES.CPK` are merged the same way. When several mods bring the same file, the
+later one in the order wins.
+
+- Switch textures (`.ftx`: NVT on the Switch, GNF on the PS4) are left out, so a mod's
+  translated help pictures keep the PS4 ones.
+- Mods that replace the Switch's `Unicorn.CPK` or other archives, and the Switch `exefs`, are
+  not supported.
+- With the text language `japanese` no language archive is read, so the mod has no effect.
+- The Switch text sometimes has longer lines than the fan patch, which re-wrapped some of them
+  for the PS4 layout (the start-up warning runs past the screen edges).
+
 ## Third-party patches (shadPS4 XML)
 
 Put shadPS4/GoldHEN patch XML files in `patches/` in the data directory. Only the `Metadata`
