@@ -237,7 +237,8 @@ enum Row {
 };
 
 constexpr const char* DisplayModes[] = {"Windowed", "Borderless", "Fullscreen"};
-constexpr const char* ResolutionNames[] = {"1080p (native)", "720p", "900p", "1800p", "4K"};
+constexpr const char* ResolutionNames[] = {"1080p (native)", "720p", "900p", "1800p (supersampling)",
+                                           "4K (supersampling)"};
 constexpr const char* IconKeys[] = {"auto", "playstation", "xbox", "nintendo"};
 constexpr const char* IconNames[] = {"Auto", "PlayStation", "Xbox", "Nintendo"};
 constexpr const char* AspectNames[] = {"16:9", "21:9 (ultrawide)", "32:9 (super ultrawide)"};
@@ -251,7 +252,8 @@ const VwgpuSettingRow Rows[RowCount] = {
     {"VSync", "Waits for the monitor: no tearing, slightly more input delay.", VWGPU_ROW_SWITCH, 0, nullptr, 1, 0,
      0, 0, nullptr},
     {"Render Resolution",
-     "The size the game is drawn at: lower is faster, higher is sharper.\nTakes effect the next time the game "
+     "The size the game is drawn at: lower is faster, higher is sharper.\nAbove 1080p it supersamples: drawn "
+     "larger and averaged down, for smooth edges.\nTakes effect the next time the game "
      "starts.",
      VWGPU_ROW_CHOICE, int(std::size(ResolutionNames)), ResolutionNames, 0, 0, 0, 0, nullptr},
     {"Aspect Ratio",

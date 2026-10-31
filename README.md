@@ -114,7 +114,9 @@ your issue. No game files or saves are included.
 
 The game renders at 1920×1080 by default. Set another size in the menu (Performance, applied on
 restart) or with `VW_RENDER_SCALE`: `720p` and `900p` for weak GPUs, `1800p` and `4K`
-for smoother edges and sharper art. Every size uses the game's own PS4 Pro path (`VW_NEO_MODE=1`)
+for supersampling: the game is drawn larger and averaged down to the window, which gives smooth
+edges and sharper art (the port has no separate anti-aliasing setting; the game's art is mostly
+2D sprites, which anti-aliasing filters blur). Every size uses the game's own PS4 Pro path (`VW_NEO_MODE=1`)
 at that size, which lays out the 2D layers from the target size, so the framing and the HUD stay
 the same at every resolution.
 
