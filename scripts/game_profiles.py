@@ -33,6 +33,9 @@ PROFILES = {
             'folders': ('MsgSheet',),
         },
     },
+    'CUSA19610': {  # 13 Sentinels: Aegis Rim (US)
+        'native_modules': ('libSceNpToolkit2.prx',),
+    },
 }
 
 
