@@ -69,8 +69,9 @@ sets `VW_NEO_MODE=1` (sceKernelIsNeoMode returns 1) and, below 4K, patches the s
 imm32` operands of the game's width/height getters (`src/unicorn_render_scale.h`). Checked: 4K
 title and battle. Native (1080p) is the base PS4 path. 1440p was removed (2026-10-19): on the
 battle map the foreground blur at the bottom broke into blocks while the camera moved (Windows,
-RX 9070 XT; 4K and 1080p clean). The probe also writes the size into the 3840.0f/2160.0f pair at
-0xaf31a4 (one pass rectangle in FUN_00233cd0); whether that fixes 1440p was not checked.
+RX 9070 XT; 4K and 1080p clean). The 3840.0f/2160.0f pair at 0xaf31a4 is left alone: it is the
+rectangle of the World Map's canvas pass (FUN_00233cd0, pass 0x1a), whose target is 3840x2160 at
+every size. Patching it to the render size (2026-10-19 to 2026-11) misplaced the markers (#69).
 The battle map has its own targets of min(screen, 2880x1620), the Pro's limit at any Pro size
 (`unicorn_map_*` in the same header, 2026-10-31): the probe raises the limit to the render size, so
 at 4K the map is no longer drawn at 2880x1620 and enlarged (#56).
