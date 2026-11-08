@@ -13,11 +13,11 @@
  * Pro size (1800p, or below 1080p) is those six imm32 operands. */
 static const uint32_t unicorn_width_imm[] = {0x3d9fd, 0x3db77, 0x3e2bd};
 static const uint32_t unicorn_height_imm[] = {0x3da19, 0x3db5b, 0x3e2dd};
-/* 3840.0f and 2160.0f in rodata, read only by FUN_00233cd0 at 0x2354bb: the rectangle of one
- * of its passes (FUN_000393d0, pass 0x1a). Patched with the integer sizes; suspected (not
- * confirmed) cause of the blocky foreground blur that got 1440p removed. */
-static const uint32_t unicorn_width_float = 0xaf31a4;
-static const uint32_t unicorn_height_float = 0xaf31a8;
+/* Not patched: 3840.0f and 2160.0f at 0xaf31a4, read only by FUN_00233cd0 at 0x2354bb. They are
+ * the rectangle of the World Map's canvas pass (FUN_000393d0, pass 0x1a), whose target is
+ * 3840x2160 at every size. At the render size the canvas filled only that target's top-left
+ * corner: the explored area was misdrawn and the markers shrank into the top-left of the
+ * screen (#69). */
 
 /* The battle map is drawn into targets of its own, min(screen, 2880x1620): the PS4 Pro's limit,
  * kept at any Pro size. Two copies of the code (not a Ghidra function; 0x2377d8 and 0x2379b2)
@@ -61,11 +61,7 @@ static inline int unicorn_render_scale_signature_match(const unsigned char *imag
         memcpy(&hv, image + h, 4);
         if (wv != 3840 || hv != 2160) return 0;
     }
-    float wf, hf;
-    if (unicorn_address(unicorn_height_float) + 4 > size) return 0;
-    memcpy(&wf, image + unicorn_address(unicorn_width_float), 4);
-    memcpy(&hf, image + unicorn_address(unicorn_height_float), 4);
-    return wf == 3840.0f && hf == 2160.0f;
+    return 1;
 }
 
 #endif
