@@ -21,6 +21,33 @@ inline constexpr std::array<const char*, DisplayModeCount> DisplayModeNames = {
 inline constexpr std::array<std::string_view, 5> Resolutions = {"native", "720p", "900p", "1800p",
                                                                 "4K"};
 
+/// Height of each entry of Resolutions.
+inline constexpr std::array<int, 5> ResolutionHeights = {1080, 720, 900, 1800, 2160};
+
+struct Size {
+    int w, h;
+};
+
+/// First size of the window in Windowed mode: the game's image at the render resolution and
+/// aspect ratio (at most 1080 tall), shrunk to fit the display's usable area so that no side
+/// falls off the screen (issue #70: a 1920x1080 window on a 1280x1024 monitor).
+inline Size WindowedSize(int resolution, int aspect_w, int aspect_h, int usable_w, int usable_h) {
+    const int height = resolution >= 0 && resolution < int(ResolutionHeights.size())
+                           ? ResolutionHeights[resolution] : 1080;
+    Size s{0, height < 1080 ? height : 1080};
+    s.w = s.h * aspect_w / aspect_h;
+    if (usable_w > 0 && usable_h > 0 && (s.w > usable_w || s.h > usable_h)) {
+        if (s.w * usable_h > usable_w * s.h) {  // width is the tighter side
+            s.h = s.h * usable_w / s.w;
+            s.w = usable_w;
+        } else {
+            s.w = s.w * usable_h / s.h;
+            s.h = usable_h;
+        }
+    }
+    return s;
+}
+
 /// Text languages (the probe's text language patch, src/probe.c). "auto" leaves the game's
 /// choice: Traditional Chinese for the English system language the port reports, English with the
 /// English patch. Korean needs Unicorn_KO.CPK, which the Asia version does not ship.
