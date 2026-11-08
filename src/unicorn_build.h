@@ -16,6 +16,7 @@ static int unicorn_build = UNICORN_V0104;
 
 static const struct { uint32_t start, end; int32_t shift; } unicorn_hk0105_ranges[] = {
     {0x2b550, 0x2b5d1, 384},     /* FUN_0002b590, the text lookup */
+    {0x2c590, 0x2c591, 384},     /* FUN_0002c590, a text object's text */
     {0x3d9bd, 0x3e31d, 384},     /* render size getters */
     {0x1fdf80, 0x1fe000, 944},   /* CRILAYLA decompressor */
     {0x233df4, 0x234d1b, 960},   /* text language, 2D ortho */
@@ -24,6 +25,7 @@ static const struct { uint32_t start, end; int32_t shift; } unicorn_hk0105_range
     {0x3860e1, 0x38692b, 3008},  /* fade, haze */
     {0x735370, 0x73a01e, -9936}, /* Options screen */
     {0x940e39, 0x9458e8, -9616}, /* weather layer */
+    {0xa27ad2, 0xa27bfe, -8848}, /* speech bubble text */
     {0xaf1f50, 0xaf1fe0, -8672}, /* rodata: full-screen fill corners */
     {0xaf3164, 0xaf3390, -8624}, /* rodata: screen size floats, 9/16 */
     {0xd7c900, 0xd7cbec, -8384}, /* rodata: Options tables */

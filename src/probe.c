@@ -608,6 +608,53 @@ static void install_unicorn_cri_hook(const char *app0, Segment *segments, uint64
     runtime_pad_on_button_icons(button_icons_set_style);
 }
 
+/* Unicorn Overlord: three-line story text smaller in the two-line speech bubble
+ * (src/unicorn_text_wrap.h, #73). */
+typedef ABI void (*BubbleSetText)(unsigned char *text_object, const unsigned char *message);
+static BubbleSetText bubble_set_text;
+
+static ABI void unicorn_bubble_set_text(unsigned char *text_object, const unsigned char *message) {
+    const int lines = text_fit_enabled() ? text_bubble_lines(message, 0x100) : 1;
+    if (lines < 3) {
+        bubble_set_text(text_object, message);
+        return;
+    }
+    float scale[2], fitted[2];
+    memcpy(scale, text_object + 0x164, sizeof(scale));
+    fitted[0] = text_bubble_scale(scale[0], lines);
+    fitted[1] = text_bubble_scale(scale[1], lines);
+    memcpy(text_object + 0x164, fitted, sizeof(fitted));
+    bubble_set_text(text_object, message); /* lays the text out at that scale */
+    memcpy(text_object + 0x164, scale, sizeof(scale));
+}
+
+static void install_unicorn_bubble_text(const char *app0, Segment *segments, uint64_t count) {
+    if (!unicorn_known_build(app0)) return;
+    const uint64_t call = unicorn_address(TEXT_BUBBLE_CALL), id = unicorn_address(TEXT_BUBBLE_SCALE_ID);
+    const uint64_t target = unicorn_address(TEXT_BUBBLE_SET_TEXT);
+    const uint64_t before = sizeof(text_bubble_call_signature) - 1;
+    int32_t relative;
+    if (!call || !id || !target || !mapped(segments, count, call - before, before + 5) ||
+        !mapped(segments, count, id, sizeof(text_bubble_scale_signature)) ||
+        memcmp(image + call - before, text_bubble_call_signature, sizeof(text_bubble_call_signature)) ||
+        memcmp(image + id, text_bubble_scale_signature, sizeof(text_bubble_scale_signature)) ||
+        (memcpy(&relative, image + call + 1, 4), call + 5 + (int64_t)relative != target)) {
+        printf("Speech bubbles: the game differs from v01.04 here; three-line text may overflow\n");
+        return;
+    }
+    unsigned char *stub = allocate(page_size);
+    const uintptr_t hook = (uintptr_t)unicorn_bubble_set_text;
+    stub[0] = 0x48; stub[1] = 0xb8; memcpy(stub + 2, &hook, 8); stub[10] = 0xff; stub[11] = 0xe0;
+    protect(stub, page_size, 5);
+    if (!jump_reaches(call, stub)) {
+        printf("Speech bubbles: hook not reachable; three-line text may overflow\n");
+        return;
+    }
+    bubble_set_text = (BubbleSetText)(uintptr_t)(image + target);
+    relative = (int32_t)((int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + call + 5));
+    memcpy(image + call + 1, &relative, 4);
+}
+
 /* Unicorn Overlord: the port's settings in the game's Options screen
  * (src/unicorn_native_settings.h). */
 static void install_unicorn_native_settings(const char *app0) {
@@ -1016,6 +1063,7 @@ int main(int argc, char **argv) {
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
     if (gpu_enabled) install_unicorn_render_scale();
     install_unicorn_cri_hook(app0, segments, ns);
+    install_unicorn_bubble_text(app0, segments, ns);
     if (gpu_enabled) install_unicorn_native_settings(app0);
     install_unicorn_text_language(app0);
 #ifdef _WIN32
