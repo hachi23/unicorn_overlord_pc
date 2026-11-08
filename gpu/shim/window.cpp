@@ -17,6 +17,19 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         UNREACHABLE_MSG("Failed to initialize SDL video: {}", SDL_GetError());
     }
+    // vw: the windowed size follows the render resolution and fits the screen (left a margin for
+    // the title bar and frame); Borderless and Fullscreen return to it when switched to Windowed.
+    {
+        static constexpr int aspects[][2] = {{16, 9}, {64, 27}, {32, 9}};
+        const VwSettings::Values& s = VwSettings::Get();
+        const int a = s.startup_aspect_ratio >= 0 && s.startup_aspect_ratio < 3 ? s.startup_aspect_ratio : 0;
+        SDL_Rect usable{};
+        if (!SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable)) usable = {};
+        const VwGraphics::Size size = VwGraphics::WindowedSize(
+            s.startup_render_resolution, aspects[a][0], aspects[a][1], usable.w * 95 / 100, usable.h * 90 / 100);
+        width_ = size.w;
+        height_ = size.h;
+    }
     SDL_PropertiesID props = SDL_CreateProperties();
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED);
