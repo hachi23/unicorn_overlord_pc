@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "unicorn_build.h"
+#include "unicorn_text_wrap.h"
 #include "../gpu/vwgpu.h"
 
 #ifndef ABI /* src/runtime.h: the game's calling convention */
@@ -77,7 +78,7 @@ static ABI const char *native_settings_text(const unsigned char *sheet, int id) 
     if (id >= 0 && (uint32_t)id < count) {
         const char *text;
         memcpy(&text, table + 0x20 + (uint64_t)id * 8, sizeof(text));
-        return text;
+        return count >= TEXT_WRAP_STORY_MIN ? text_wrap_story(table, count, id, text) : text;
     }
     if (id >= NATIVE_TEXT) {
         const unsigned row = (unsigned)(id - NATIVE_TEXT) / 64, slot = (unsigned)(id - NATIVE_TEXT) % 64;

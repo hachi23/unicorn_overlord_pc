@@ -102,9 +102,12 @@ goes to the end of the list.
   Switch picture format does not work on the PS4. Mods that replace the Switch `Unicorn.CPK`,
   other archives or `exefs` are not supported.
 - **Long text can run past its box.** Story lines over 54 characters are broken at spaces
-  automatically, because the Switch story text has almost no line breaks. Menus are left as they
-  are, so a long translated menu text can run past its box. The start-up warning screen already
-  runs past the screen edges with the Portuguese translation.
+  automatically, because the Switch story text has almost no line breaks. The speech bubble holds
+  two lines: a story line of three or more lines (common in the fan English patches, #73) is
+  broken into two when they fit the bubble, and otherwise drawn smaller so that it fits
+  (`VW_TEXT_FIT=0` turns both off). Menus are left as they are, so a long translated menu text
+  can run past its box. The start-up warning screen already runs past the screen edges with the
+  Portuguese translation.
 - **Letters the game's fonts lack show as a box.** The dialogue and menu fonts have the Latin
   accented letters: ã, ç, é and í were checked with Portuguese. Other letters and alphabets are
   untested.
