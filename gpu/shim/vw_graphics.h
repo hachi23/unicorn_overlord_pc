@@ -50,9 +50,13 @@ inline Size WindowedSize(int resolution, int aspect_w, int aspect_h, int usable_
 
 /// Text languages (the probe's text language patch, src/probe.c). "auto" leaves the game's
 /// choice: Traditional Chinese for the English system language the port reports, English with the
-/// English patch. Korean needs Unicorn_KO.CPK, which the Asia version does not ship.
-inline constexpr std::array<std::string_view, 5> TextLanguages = {"auto", "japanese", "traditional_chinese",
-                                                                  "simplified_chinese", "korean"};
+/// English patch. Korean needs Unicorn_KO.CPK, which the Asia version does not ship. English,
+/// French, Spanish, German and Italian are the game's own Western languages: they need the
+/// Switch version's Unicorn_US/FR/ES/DE/IT.CPK in data/languages (scripts/mods.py). New keys go
+/// at the end: vw.ini stores the key, the menu the index.
+inline constexpr std::array<std::string_view, 10> TextLanguages = {
+    "auto", "japanese", "traditional_chinese", "simplified_chinese", "korean",
+    "english", "french", "spanish", "german", "italian"};
 
 /// Aspect ratios of the game's image (the probe's ultrawide patch, src/unicorn_ultrawide.h):
 /// wider than 16:9 shows more of the scene at the sides; menus stay 16:9 in the middle. 21:9

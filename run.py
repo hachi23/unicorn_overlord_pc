@@ -258,10 +258,17 @@ def main():
              'so the port cannot run it. It needs CUSA36381 v01.04 or the Hong Kong 1.05 '
              'package (issue #14). VW_ALLOW_OTHER_EBOOT=1 starts it anyway, for testing.')
     original_game = game.resolve()
+    languages = Path(env.get('VW_LANGUAGES_DIR', data / 'languages'))
+    try:
+        languages.mkdir(parents=True, exist_ok=True)  # where Switch language archives go
+    except OSError:
+        pass
     game = Path(run_script('mods.py', game, '--out', out,
                            '--mods-dir', env.get('VW_MODS_DIR', data / 'mods'),
                            '--config', env.get('VW_MODS_CONFIG', data / 'mods.json'),
-                           '--enabled', env.get('VW_MODS_ENABLED', '1'), capture=True).strip())
+                           '--enabled', env.get('VW_MODS_ENABLED', '1'),
+                           '--languages-dir', languages,
+                           capture=True).strip())
     mod_view = game if game.resolve() != original_game else None
     try:
         sku = env.get('VW_CONTENT_SKU', 'full')

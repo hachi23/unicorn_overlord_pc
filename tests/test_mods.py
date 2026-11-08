@@ -111,6 +111,34 @@ class ModTests(unittest.TestCase):
             self.assertEqual(mods.cpk.Archive(self.game / name).read('MsgSheet/UcSysMsg.fms'), b'old text')
         self.assertFalse((result / 'Unicorn_US.CPK').exists())
 
+    def test_switch_language_archives_become_the_games_western_archives(self):
+        merge = {'archives': ('Unicorn_US.CPK', 'Unicorn_FR.CPK'), 'into': ('Unicorn_TW.CPK',),
+                 'slots': ('Unicorn_US.CPK', 'Unicorn_FR.CPK', 'Unicorn_DE.CPK'), 'skip': ('.ftx',)}
+        self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcSysMsg.fms': b'chinese'})
+        languages = self.root / 'languages'
+        (languages / 'romfs').mkdir(parents=True)
+        self.archive(languages / 'Unicorn_FR.CPK',
+                     {'MsgSheet/UcSysMsg.fms': b'francais', 'GUI/Interface.mbs': b'ui fr', 'Help/Help.ftx': b'nvt'})
+        self.archive(languages / 'romfs' / 'unicorn_de.cpk', {'MsgSheet/UcSysMsg.fms': b'deutsch'})
+        (languages / 'Unicorn.CPK').write_bytes(b'not a language archive')
+        (self.moddir / 'Fix').mkdir(parents=True)
+        self.archive(self.moddir / 'Fix' / 'Unicorn_FR.CPK', {'MsgSheet/UcSysMsg.fms': b'francais corrige'})
+        with mock.patch.object(mods, 'archive_merge', return_value=merge):
+            result = mods.build_overlay(self.game, self.root / 'out', [], languages)
+            fixed = mods.build_overlay(self.game, self.root / 'out', [('Fix', self.moddir / 'Fix')], languages)
+            none = mods.build_overlay(self.game, self.root / 'out', [], self.root / 'missing')
+        french = mods.cpk.Archive(result / 'Unicorn_FR.CPK')
+        self.assertEqual(set(french.files), {'MsgSheet/UcSysMsg.fms', 'GUI/Interface.mbs'})
+        self.assertEqual(french.read('MsgSheet/UcSysMsg.fms'), b'francais')
+        self.assertEqual(mods.cpk.Archive(result / 'Unicorn_DE.CPK').read('MsgSheet/UcSysMsg.fms'), b'deutsch')
+        self.assertFalse((result / 'Unicorn_US.CPK').exists())
+        self.assertEqual(mods.cpk.Archive(result / 'Unicorn_TW.CPK').read('MsgSheet/UcSysMsg.fms'), b'chinese')
+        # A mod's archive goes over the Switch one, and still into the Chinese archive as before.
+        self.assertEqual(mods.cpk.Archive(fixed / 'Unicorn_FR.CPK').read('MsgSheet/UcSysMsg.fms'), b'francais corrige')
+        self.assertEqual(mods.cpk.Archive(fixed / 'Unicorn_FR.CPK').read('GUI/Interface.mbs'), b'ui fr')
+        self.assertEqual(mods.cpk.Archive(fixed / 'Unicorn_TW.CPK').read('MsgSheet/UcSysMsg.fms'), b'francais corrige')
+        self.assertEqual(none, self.game.resolve())
+
     def test_translation_sheets_merged_into_language_archives(self):
         import fms
         merge = {'archives': (), 'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'folders': ('MsgSheet',)}

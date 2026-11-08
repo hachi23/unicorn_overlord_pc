@@ -672,7 +672,9 @@ static void install_unicorn_native_settings(const char *app0) {
  * "Text language"). After its system language query the game stores its language at 0x233e34:
  * 9 (Korean) gives 6, 10 (Traditional Chinese) 7, 11 (Simplified Chinese) 8, any other 7, and it
  * then binds that language's CPK (6 Unicorn_KO, 7 Unicorn_TW, 8 Unicorn_CN). So an English or
- * Japanese system got Chinese text. 0 binds none: the Japanese text in Unicorn.CPK. */
+ * Japanese system got Chinese text. 0 binds none: the Japanese text in Unicorn.CPK. 1-5 are the
+ * Western languages of the same code (Unicorn_US, FR, ES, DE, IT): their fonts are in Unicorn.CPK
+ * and the game wraps their lines itself, so only the archive is missing. */
 #define UNICORN_TEXT_LANGUAGE_OFFSET 0x233e34
 /* lea ecx, [rax-9]; add eax, -3; mov edx, 7; cmp ecx, 3; cmovb edx, eax */
 static const unsigned char unicorn_text_language_signature[] = {
@@ -681,7 +683,8 @@ static const unsigned char unicorn_text_language_signature[] = {
 /* The game's language for a TextLanguages key (gpu/shim/vw_graphics.h), -1 for auto. */
 static int unicorn_text_language_value(const char *text) {
     static const struct { const char *key; int value; } languages[] = {
-        {"japanese", 0}, {"traditional_chinese", 7}, {"simplified_chinese", 8}, {"korean", 6}};
+        {"japanese", 0}, {"english", 1}, {"french", 2}, {"spanish", 3}, {"german", 4}, {"italian", 5},
+        {"traditional_chinese", 7}, {"simplified_chinese", 8}, {"korean", 6}};
     char key[32] = "";
     while (*text == ' ' || *text == '\t') ++text;
     size_t n = 0;
@@ -710,21 +713,26 @@ static void install_unicorn_text_language(const char *app0) {
     if (!unicorn_known_build(app0)) return;
     const int language = unicorn_text_language_setting();
     if (language < 0) return;
-    static const char *const names[] = {"Japanese", "", "", "", "", "", "Korean", "Traditional Chinese",
-                                        "Simplified Chinese"};
-    if (language == 6) {
-        /* The game opens it by this name; file names are matched without case. */
-        snprintf(path, sizeof(path), "%s/Unicorn_KO.CPK", app0 ? app0 : ".");
-        FILE *ko = fopen(path, "rb");
-        if (!ko) {
-            snprintf(path, sizeof(path), "%s/Unicorn_KO.cpk", app0 ? app0 : ".");
-            ko = fopen(path, "rb");
+    static const char *const names[] = {"Japanese", "English", "French", "Spanish", "German", "Italian",
+                                        "Korean", "Traditional Chinese", "Simplified Chinese"};
+    /* The archives the game opens for languages 1-6 (a name table in the eboot, 0x140c608 in the Hong Kong 1.05 one). The Asia dump
+     * has none of them: Unicorn_KO.CPK comes from a Korean dump, the others are written from
+     * Switch archives in data/languages (scripts/mods.py, write_slots). */
+    static const char *const archives[] = {"", "US", "FR", "ES", "DE", "IT", "KO"};
+    if (language >= 1 && language <= 6) {
+        FILE *f = NULL;
+        for (int upper = 1; upper >= 0 && !f; --upper) {  /* matched without case by the game */
+            snprintf(path, sizeof(path), "%s/Unicorn_%s.%s", app0 ? app0 : ".", archives[language],
+                     upper ? "CPK" : "cpk");
+            f = fopen(path, "rb");
         }
-        if (!ko) {
-            printf("Text language: Korean needs Unicorn_KO.CPK, which this game folder lacks; the game's default\n");
+        if (!f) {
+            printf("Text language: %s needs Unicorn_%s.CPK (%s), which is missing; the game's default\n",
+                   names[language], archives[language],
+                   language == 6 ? "from a Korean dump" : "from the Switch version, in data/languages");
             return;
         }
-        fclose(ko);
+        fclose(f);
     }
     const uint64_t at = unicorn_address(UNICORN_TEXT_LANGUAGE_OFFSET);
     if (memcmp(image + at, unicorn_text_language_signature, sizeof(unicorn_text_language_signature))) {

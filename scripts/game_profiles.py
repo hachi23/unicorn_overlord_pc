@@ -25,6 +25,10 @@ PROFILES = {
         'mod_archive_merge': {
             'archives': ('Unicorn_US.CPK', 'Unicorn_FR.CPK', 'Unicorn_DE.CPK', 'Unicorn_IT.CPK', 'Unicorn_ES.CPK'),
             'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'),
+            # The game's own archives for English, French, Spanish, German and Italian text
+            # (text languages 1-5, src/probe.c), which the Asia dump lacks: written from the
+            # Switch archives of that name in data/languages or a mod (mods.write_slots).
+            'slots': ('Unicorn_US.CPK', 'Unicorn_FR.CPK', 'Unicorn_ES.CPK', 'Unicorn_DE.CPK', 'Unicorn_IT.CPK'),
             'skip': ('.ftx',),
             # Its story lines mostly come without the line breaks the PS4 boxes need.
             'rewrap': ('MsgSheet/UcScriptMsgConv.fms',),

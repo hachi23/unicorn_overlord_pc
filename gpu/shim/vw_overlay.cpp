@@ -537,12 +537,16 @@ void OverlayTab() {
             std::snprintf(text, sizeof(text), "ready");
         }
         InfoRow("Shader cache", text);
-        static const char* const language_labels[] = {"Game default", "Japanese", "Traditional Chinese",
-                                                      "Simplified Chinese", "Korean (needs Unicorn_KO.CPK)"};
+        static const char* const language_labels[] = {
+            "Game default", "Japanese", "Traditional Chinese", "Simplified Chinese", "Korean (needs Unicorn_KO.CPK)",
+            "English (Switch text)", "Fran\xc3\xa7" "ais (Switch text)", "Espa\xc3\xb1" "ol (Switch text)",
+            "Deutsch (Switch text)", "Italiano (Switch text)"};
         static_assert(std::size(language_labels) == VwGraphics::TextLanguages.size());
         ChoiceRow("Text language (on restart)", s.text_language, language_labels, nullptr,
                   int(std::size(language_labels)),
-                  "Game default: Traditional Chinese on the Asia version, English with the English patch.");
+                  "Game default: Traditional Chinese on the Asia version, English with the English patch. "
+                  "The Switch text languages need that language's Unicorn_XX.CPK from your Switch dump "
+                  "in data/languages (docs/LANGUAGE_MODS.md).");
         CheckRow("Check for updates at start", s.check_updates,
                  "The start program looks for a newer version of the port and asks before downloading.");
         ImGui::EndTable();

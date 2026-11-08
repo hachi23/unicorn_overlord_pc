@@ -143,10 +143,12 @@ template and attach:
 
 ### Other languages (experimental)
 
-Fan translations made for the Switch version (`Unicorn_US.CPK`, such as the Brazilian Portuguese
-one) and translations you write yourself as JSON files work as mods in `data/mods/`. They replace
-the Chinese text, so set **Text Language** (Insert menu) to Traditional or Simplified Chinese.
-Only the title menu and the opening dialogue have been checked so far. Step by step:
+With the Switch version dumped from your own console, the game also runs in English, French,
+German, Italian or Spanish: copy that language's `Unicorn_XX.CPK` from the Switch dump into
+`data/languages/` and pick it under **Text language** (Insert menu). Fan translations made for
+the Switch version (`Unicorn_US.CPK`, such as the Brazilian Portuguese one) and translations you
+write yourself as JSON files work as mods in `data/mods/`. Only the title menu and the opening
+dialogue have been checked so far. Step by step:
 [docs/LANGUAGE_MODS.md](docs/LANGUAGE_MODS.md). Reports are welcome with the
 **Translation report** issue template.
 

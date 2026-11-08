@@ -246,21 +246,73 @@ def merge_archives(overlay, merge, archives, loose=()):
               f'{f", {skipped} left out (another platform)" if skipped else ""}', file=sys.stderr)
 
 
-def build_overlay(game, out, mods):
+def language_files(folder, slots):
+    """(label, path) of the language archives (`slots`, matched without case) in `folder` or
+    one folder level below it (a dump's romfs folder copied as it is), sorted by path."""
+    folder = Path(folder) if folder else None
+    if not folder or not folder.is_dir():
+        return []
+    wanted = {name.casefold() for name in slots}
+    found = [p for p in folder.iterdir() if p.is_file() and p.name.casefold() in wanted]
+    found += [p for d in folder.iterdir() if d.is_dir() for p in d.iterdir()
+              if p.is_file() and p.name.casefold() in wanted]
+    return [(folder.name, p) for p in sorted(found)]
+
+
+def write_slots(overlay, merge, sources):
+    """The game's language archives for Western text (merge['slots']: the game opens
+    Unicorn_US/FR/ES/DE/IT.CPK for text languages 1-5, which the Asia dump lacks), each from
+    the Switch archives of that name in `sources` ((label, path) in order: a later file wins),
+    over the game's own archive when it has one. Names ending in merge['skip'] (Switch
+    pictures) are left out: the game then shows those of Unicorn.CPK."""
+    by_slot = {}
+    for label, path in sources:
+        by_slot.setdefault(path.name.casefold(), []).append((label, path))
+    for slot in merge.get('slots', ()):
+        parts = by_slot.get(slot.casefold())
+        if not parts:
+            continue
+        destination = child(overlay, slot)
+        files, skipped = {}, 0
+        if is_link(destination):
+            base = cpk.Archive(link_target(destination))
+            files = {name.casefold(): (name, base, name) for name in base.files}
+            remove_link(destination)
+        for _, path in parts:
+            archive = cpk.Archive(path)
+            for name in archive.files:
+                if name.casefold().endswith(tuple(merge.get('skip', ()))):
+                    skipped += 1
+                    continue
+                files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
+        cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
+        print(f'Languages: {destination.name} from {", ".join(dict.fromkeys(l for l, _ in parts))}: '
+              f'{len(files)} files{f", {skipped} pictures left out (Switch format)" if skipped else ""}',
+              file=sys.stderr)
+
+
+def build_overlay(game, out, mods, languages=None):
+    """The game folder as the game sees it: `game` itself, or a view (links) with the mods'
+    files and the language archives (`languages`: a folder of Switch Unicorn_XX.CPK files)."""
     game = Path(game).resolve(strict=True)
     names = game_names(game)
     merge = archive_merge(game) or {}
     merged = {name.casefold() for name in merge.get('archives', ())}
     folders = {name.casefold() for name in merge.get('folders', ())}
+    slots = {name.casefold() for name in merge.get('slots', ())}
     replacements = []
     archives = []
     loose = []
     owners = {}
+    slot_sources = language_files(languages, merge.get('slots', ()))
     for name, root in mods:
         count = 0
         for relative, source in mod_files(root, names):
-            if len(relative.parts) == 1 and relative.name.casefold() in merged:
-                archives.append((name, source))
+            if len(relative.parts) == 1 and relative.name.casefold() in merged | slots:
+                if relative.name.casefold() in merged:
+                    archives.append((name, source))
+                if relative.name.casefold() in slots:
+                    slot_sources.append((name, source))
                 count += 1
                 continue
             if relative.parts[0].casefold() in folders:
@@ -276,7 +328,7 @@ def build_overlay(game, out, mods):
             replacements.append((relative, source))
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
-    if not replacements and not archives and not loose:
+    if not replacements and not archives and not loose and not slot_sources:
         return game
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -306,6 +358,8 @@ def build_overlay(game, out, mods):
         print(f'Mods: {replaced} game files replaced, {added} added', file=sys.stderr)
         if archives or loose:
             merge_archives(overlay, merge, archives, loose)
+        if slot_sources:
+            write_slots(overlay, merge, slot_sources)
         return overlay
     except BaseException:
         shutil.rmtree(overlay)
@@ -319,6 +373,8 @@ def main():
     parser.add_argument('--mods-dir', required=True, type=Path)
     parser.add_argument('--config', type=Path)
     parser.add_argument('--enabled', choices=('0', '1'), default='1')
+    parser.add_argument('--languages-dir', type=Path,
+                        help='Switch language archives (Unicorn_US/FR/ES/DE/IT.CPK) for the text languages')
     args = parser.parse_args()
     layers = []
     if args.enabled == '1':
@@ -333,7 +389,7 @@ def main():
         else:
             for name in selected(args.mods_dir, args.config, names):
                 layers.append((name, args.mods_dir / name))
-    print(build_overlay(args.game, args.out, layers))
+    print(build_overlay(args.game, args.out, layers, args.languages_dir))
 
 
 if __name__ == '__main__':
