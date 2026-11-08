@@ -509,9 +509,6 @@ static void install_unicorn_render_scale(void) {
             memcpy(image + unicorn_address(unicorn_width_imm[i]), &width, 4);
             memcpy(image + unicorn_address(unicorn_height_imm[i]), &height, 4);
         }
-        const float widthf = (float)width, heightf = (float)height;
-        memcpy(image + unicorn_address(unicorn_width_float), &widthf, 4);
-        memcpy(image + unicorn_address(unicorn_height_float), &heightf, 4);
     }
     if (width * 9 > height * 16) {
         /* The floats the patched instructions read: a page near the image (as for the CRI hook). */
