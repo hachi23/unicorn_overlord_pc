@@ -745,6 +745,7 @@ static void install_unicorn_text_language(const char *app0) {
     const uint32_t value = (uint32_t)language;
     memcpy(image + at + 1, &value, 4);
     printf("Text language: %s\n", names[language]);
+    if (language >= 1 && language <= 5) text_fit_disable();
 }
 
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied

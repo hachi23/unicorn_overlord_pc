@@ -146,7 +146,9 @@ goes to the end of the list.
 - **Only text.** The Switch files' pictures (help and tutorial images) are left out because the
   Switch picture format does not work on the PS4. Mods that replace the Switch `Unicorn.CPK`,
   other archives or `exefs` are not supported.
-- **Long text can run past its box.** Story lines over 54 characters are broken at spaces
+- **Long text can run past its box** when the text replaces Chinese. (In English, Français,
+  Deutsch, Italiano or Español the game breaks the lines itself and none of this applies.)
+  Story lines over 54 characters are broken at spaces
   automatically, because the Switch story text has almost no line breaks. The speech bubble holds
   two lines: a story line of three or more lines (common in the fan English patches, #73) is
   broken into two when they fit the bubble, and otherwise drawn smaller so that it fits
