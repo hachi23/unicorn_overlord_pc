@@ -74,6 +74,13 @@ std::atomic<u32> loading_done{0}, loading_total{0};
 std::atomic<u32> background_done{0}, background_total{0};
 bool dirty = false; // settings changed while open: saved on close
 int requested_tab = -1; // switch on the next frame (L1/R1, Q/E, menu opened)
+// Keyboard legend (issue #50): the game's prompts show controller icons (Xbox letters when only
+// a keyboard is used), so F1 shows which key presses each one. The first key press of a session
+// shows a hint for it for a few seconds.
+bool key_legend_open = false;
+std::chrono::steady_clock::time_point key_hint_until{};
+bool key_hint_shown = false;
+
 // Controls tab: the PS4 button waiting for a new key (keyboard) or pad button, -1 none.
 int binding_button = -1;
 bool binding_keyboard = false;
@@ -788,6 +795,81 @@ void FpsCounter() {
     ImGui::End();
 }
 
+bool KeyHintShowing() {
+    return key_hint_until != std::chrono::steady_clock::time_point{} &&
+           std::chrono::steady_clock::now() < key_hint_until;
+}
+
+// What the game's icon looks like for each of runtime_pad's buttons (its order): the Xbox letter
+// (what keyboard-only play shows) and the PlayStation name.
+constexpr const char* kLegendIcons[][2] = {
+    {"A", "Cross"}, {"B", "Circle"}, {"X", "Square"}, {"Y", "Triangle"}, {"LB", "L1"}, {"RB", "R1"},
+    {"LT", "L2"}, {"RT", "R2"}, {"LS (press)", "L3"}, {"RS (press)", "R3"}, {"Menu", "Options"},
+    {"View", "Touchpad"}, {"D-pad up", "Up"}, {"D-pad down", "Down"}, {"D-pad left", "Left"},
+    {"D-pad right", "Right"}};
+
+void KeyLegend() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float pad = 12.0f * base_scale;
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - pad, viewport->WorkPos.y + pad),
+                            ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.88f);
+    ImGui::Begin("##key_legend", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoFocusOnAppearing);
+    ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "Keyboard keys (F1 closes)");
+    ImGui::Separator();
+    if (ImGui::BeginTable("##keys", 2, ImGuiTableFlags_SizingFixedFit)) {
+        static_assert(std::size(kLegendIcons) == 16);
+        const int count = std::min(runtime_pad_button_count(), int(std::size(kLegendIcons)));
+        for (int i = 0; i < count; ++i) {
+            char keys[128];
+            runtime_pad_describe(1, i, keys, sizeof(keys));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%s / %s", kLegendIcons[i][0], kLegendIcons[i][1]);
+            ImGui::TableNextColumn();
+            // The touchpad also has Tab (its left half) and Backspace (its right half), fixed keys
+            // outside the bindings (runtime_pad.c).
+            const bool touchpad = !std::strcmp(kLegendIcons[i][1], "Touchpad");
+            if (touchpad) {
+                ImGui::Text("%s%sTab, Backspace (right side)", keys, *keys ? ", " : "");
+            } else {
+                ImGui::TextUnformatted(*keys ? keys : "(none)");
+            }
+        }
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Left stick");
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("W A S D");
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Right stick");
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Arrow keys");
+        ImGui::EndTable();
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("Change keys: Insert > Controls");
+    ImGui::End();
+}
+
+void KeyHint() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float pad = 12.0f * base_scale;
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - pad, viewport->WorkPos.y + pad),
+                            ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.7f);
+    ImGui::Begin("##key_hint", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoFocusOnAppearing);
+    ImGui::TextUnformatted("Playing with the keyboard? F1 shows which key is which button.");
+    ImGui::End();
+}
+
 void BackgroundLoading() {
     const u32 done = background_done, total = std::max(background_total.load(), 1u);
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -982,6 +1064,15 @@ bool HandleEvent(const SDL_Event& event) {
             Vulkan::FrameCapture::Request();
             return true;
         }
+        if (down && !event.key.repeat && event.key.key == SDLK_F1 && !is_open) {
+            key_legend_open = !key_legend_open;
+            key_hint_until = {};
+            return true;
+        }
+        if (down && !event.key.repeat && !key_hint_shown && !is_open) {
+            key_hint_shown = true;  // once a session, at the first key press
+            key_hint_until = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+        }
         if (down && !event.key.repeat &&
             (event.key.key == SDLK_INSERT || (is_open && event.key.key == SDLK_ESCAPE))) {
             SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);
@@ -1099,7 +1190,7 @@ void SetLoading(bool active, u32 done, u32 total) {
 bool Visible() {
     const auto& s = VwSettings::Get();
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
-                           choice_retiring || s.show_fps);
+                           choice_retiring || s.show_fps || key_legend_open || KeyHintShowing());
 }
 
 bool CapturesInput() {
@@ -1196,6 +1287,11 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (choice_active && !menu_open) {
         ChoiceBox();
+    }
+    if (key_legend_open && !menu_open && !loading) {
+        KeyLegend();
+    } else if (KeyHintShowing() && !menu_open && !loading) {
+        KeyHint();
     }
     ImGui::Render();
 

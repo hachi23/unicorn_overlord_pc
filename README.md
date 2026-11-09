@@ -166,6 +166,10 @@ show what it unlocked.
 
 ### Keyboard
 
+The game's prompts show controller buttons (Xbox letters when you play with the keyboard only).
+Press **F1** in the game to see which key is which button, with your own bindings; change them
+in the port's menu (Insert) > Controls. The defaults:
+
 | Key | Button |
 |---|---|
 | WASD | left stick |
@@ -179,8 +183,9 @@ show what it unlocked.
 | Z and C | L3 and R3 |
 | I, K, J, L | d-pad |
 | Enter | Options |
-| Tab | touchpad |
+| Tab (Backspace: its right side) | touchpad |
 | Insert | the port's menu |
+| F1 | the key list |
 
 ## Building
 
