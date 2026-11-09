@@ -84,6 +84,14 @@ Two small things stay as they are: the **tutorial pictures** that contain words 
 ones (the Switch pictures use a format the PS4 game can't read), and **a few system messages**
 mention the Nintendo Switch.
 
+**The file from the 1.05 update is best.** The file from the Switch base game (1.0.0) works
+too, but it lacks the text of the options and messages added in later updates. Those few lines
+show in the game's own language instead (English with the English patch). The log then says:
+
+```text
+Languages: Unicorn_FR.CPK: 5 text sheets fitted to this version's entries (an older Switch archive: only its text is used): ...
+```
+
 ## Did it work?
 
 Open the newest file in `data/logs/` and look for these lines near the top:
