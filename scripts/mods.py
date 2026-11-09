@@ -247,8 +247,9 @@ def merge_archives(overlay, merge, archives, loose=()):
 
 
 def language_files(folder, slots):
-    """(label, path) of the language archives (`slots`, matched without case) in `folder` or
-    one folder level below it (a dump's romfs folder copied as it is), sorted by path."""
+    """(label, path, slot) of the language archives (`slots`, matched without case) in
+    `folder` or one folder level below it (a dump's romfs folder copied as it is), sorted by
+    path; each fills the slot of its own name."""
     folder = Path(folder) if folder else None
     if not folder or not folder.is_dir():
         return []
@@ -257,6 +258,11 @@ def language_files(folder, slots):
     found += [p for d in folder.iterdir() if d.is_dir() for p in d.iterdir()
               if p.is_file() and p.name.casefold() in wanted]
     return [(folder.name, p, p.name) for p in sorted(found)]
+
+
+# vw.ini text_language keys (gpu/shim/vw_graphics.h) -> the archive the game opens for them.
+SLOT_OF_LANGUAGE = {'english': 'Unicorn_US.CPK', 'french': 'Unicorn_FR.CPK', 'spanish': 'Unicorn_ES.CPK',
+                    'german': 'Unicorn_DE.CPK', 'italian': 'Unicorn_IT.CPK'}
 
 
 def english_text(path):
@@ -305,10 +311,10 @@ def write_slots(overlay, merge, sources):
 def build_overlay(game, out, mods, languages=None, text_language=None):
     """The game folder as the game sees it: `game` itself, or a view (links) with the mods'
     files and the language archives (`languages`: a folder of Switch Unicorn_XX.CPK files).
-    With `text_language` 'english' and no Unicorn_US.CPK from either, the fan English patch's
-    archive (merge['english_from']) becomes it: the game's English mode then shows the patch's
-    text with the Western fonts (chapter title cards, #49). Only then, since a view makes the
-    start prepare the game image again."""
+    Only the archive of `text_language` (a vw.ini key) is written, since a view makes the start
+    prepare the game image again. For 'english' without a Unicorn_US.CPK, the fan English
+    patch's archive (merge['english_from'], in the game or a mod) becomes it: the game's English
+    mode then shows the patch's text with the Western fonts (chapter title cards, #49)."""
     game = Path(game).resolve(strict=True)
     names = game_names(game)
     merge = archive_merge(game) or {}
@@ -323,11 +329,12 @@ def build_overlay(game, out, mods, languages=None, text_language=None):
     for name, root in mods:
         count = 0
         for relative, source in mod_files(root, names):
-            if len(relative.parts) == 1 and relative.name.casefold() in merged | slots:
-                if relative.name.casefold() in merged:
-                    archives.append((name, source))
-                if relative.name.casefold() in slots:
-                    slot_sources.append((name, source, relative.name))
+            top = relative.name.casefold() if len(relative.parts) == 1 else None
+            if top in merged:  # also into the Chinese archives, as before the slots
+                archives.append((name, source))
+            if top in slots:
+                slot_sources.append((name, source, relative.name))
+            if top in merged | slots:
                 count += 1
                 continue
             if relative.parts[0].casefold() in folders:
@@ -343,11 +350,16 @@ def build_overlay(game, out, mods, languages=None, text_language=None):
             replacements.append((relative, source))
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
-    if text_language == 'english' and not any(slot.casefold() == 'unicorn_us.cpk' for _, _, slot in slot_sources):
-        for archive in merge.get('english_from', ()):
-            path = child(game, archive)
+    # Only the chosen language's slot: a view makes the start prepare the game image again.
+    wanted = SLOT_OF_LANGUAGE.get(text_language or '')
+    slot_sources = [source for source in slot_sources if source[2].casefold() == (wanted or '').casefold()]
+    if wanted == 'Unicorn_US.CPK' and not slot_sources:
+        sources = [child(game, name) for name in merge.get('english_from', ())]
+        sources += [path for _, path in reversed(archives)
+                    if path.name.casefold() in {n.casefold() for n in merge.get('english_from', ())}]
+        for path in sources:
             if path.is_file() and english_text(path):
-                slot_sources.append(('the English patch', path, 'Unicorn_US.CPK'))
+                slot_sources.append(('the English patch', path, wanted))
                 break
     if not replacements and not archives and not loose and not slot_sources:
         return game

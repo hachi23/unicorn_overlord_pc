@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Plays Unicorn Overlord from New Game through the prologue into chapter 1 (Linux), driving the
 # pad through the port's pad file (VW_PAD_FILE, tools/uo_pad.sh) and dumping a frame at each
 # checkpoint, so a run can be checked afterwards (the chapter title card, #49).

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
 # uo_ocr.sh <png>: the names in the battle map's unit panels (the left and right name boxes along
 # the bottom of a 16:9 frame), read with tesseract. Expect misreads ("[lenia's Unit"): match a
 # part of the name.

@@ -124,13 +124,16 @@ class ModTests(unittest.TestCase):
         (self.moddir / 'Fix').mkdir(parents=True)
         self.archive(self.moddir / 'Fix' / 'Unicorn_FR.CPK', {'MsgSheet/UcSysMsg.fms': b'francais corrige'})
         with mock.patch.object(mods, 'archive_merge', return_value=merge):
-            result = mods.build_overlay(self.game, self.root / 'out', [], languages)
-            fixed = mods.build_overlay(self.game, self.root / 'out', [('Fix', self.moddir / 'Fix')], languages)
-            none = mods.build_overlay(self.game, self.root / 'out', [], self.root / 'missing')
+            result = mods.build_overlay(self.game, self.root / 'out', [], languages, 'french')
+            german = mods.build_overlay(self.game, self.root / 'out', [], languages, 'german')
+            fixed = mods.build_overlay(self.game, self.root / 'out', [('Fix', self.moddir / 'Fix')], languages, 'french')
+            none = mods.build_overlay(self.game, self.root / 'out', [], self.root / 'missing', 'french')
+            chinese = mods.build_overlay(self.game, self.root / 'out', [], languages, 'traditional_chinese')
         french = mods.cpk.Archive(result / 'Unicorn_FR.CPK')
         self.assertEqual(set(french.files), {'MsgSheet/UcSysMsg.fms', 'GUI/Interface.mbs'})
         self.assertEqual(french.read('MsgSheet/UcSysMsg.fms'), b'francais')
-        self.assertEqual(mods.cpk.Archive(result / 'Unicorn_DE.CPK').read('MsgSheet/UcSysMsg.fms'), b'deutsch')
+        self.assertFalse((result / 'Unicorn_DE.CPK').exists())  # only the chosen language's archive
+        self.assertEqual(mods.cpk.Archive(german / 'Unicorn_DE.CPK').read('MsgSheet/UcSysMsg.fms'), b'deutsch')
         self.assertFalse((result / 'Unicorn_US.CPK').exists())
         self.assertEqual(mods.cpk.Archive(result / 'Unicorn_TW.CPK').read('MsgSheet/UcSysMsg.fms'), b'chinese')
         # A mod's archive goes over the Switch one, and still into the Chinese archive as before.
@@ -138,6 +141,7 @@ class ModTests(unittest.TestCase):
         self.assertEqual(mods.cpk.Archive(fixed / 'Unicorn_FR.CPK').read('GUI/Interface.mbs'), b'ui fr')
         self.assertEqual(mods.cpk.Archive(fixed / 'Unicorn_TW.CPK').read('MsgSheet/UcSysMsg.fms'), b'francais corrige')
         self.assertEqual(none, self.game.resolve())
+        self.assertEqual(chinese, self.game.resolve())  # no view, so no new preparation at start
 
     def test_english_patch_archive_becomes_the_english_archive_when_english_is_chosen(self):
         import fms
