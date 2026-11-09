@@ -2,6 +2,41 @@
 
 Start here. The sections below this one are older (2026-10-20 and before) and kept for history.
 
+## Next: #74 on the Windows PC (RX 9070 XT)
+
+The ROG Ally report (#74, bika66) points at AMD's Windows driver, not raw GPU power:
+
+- **Reporter:** Z1 Extreme (CPU family 25 model 116, 780M-class RDNA3 iGPU, 8 GB of 16 GB given
+  to the GPU), Windows 11, AMD Vulkan driver 2.0.388, port v1.5.0 (before #81). 15 FPS
+  (68 ms) on the **title and world map** at 720p with the GPU at 96-100%; **battles and
+  cutscenes smooth**. Settings: fullscreen, vsync off, **FSR1 and Anime4K (Fast) on**, deferred
+  and stale readback on. Says every setting behaves the same. Their log
+  (run-20261109-140712) has no errors.
+- **Here (Linux, RADV):** the much weaker Vega 8 runs the title at ~60 and the field at ~40;
+  its slowest scene is the battle. The reporter sees the opposite, so suspect something the
+  Windows driver runs badly.
+
+What to do on the Windows PC:
+
+1. Build main (it has #81) and also keep the v1.5.0 zip for comparison. Point setup at the
+   CUSA36381 dump; bring a save on the world map (Linux: `run_uo/user/savedata`).
+2. Run with profiling, from a Command Prompt in the port folder:
+   `set VW_GPU_PROFILE=1 && set VW_FRAME_STATS=1 && "Unicorn Overlord.exe"` (run.py starts
+   from the caller's environment; check that the lines reach `logs/`). Stay 30 s on the title,
+   30 s on the world map, 30 s in a battle.
+3. The 9070 XT is far faster than the Ally, so look at **uncapped FPS and ms per pass**, not
+   whether it reaches 60: the title and world map should run at several hundred FPS. A pass
+   that costs far more there than in battle is the suspect. Repeat at 4K with FSR1 + Anime4K
+   on (the reporter's setup), and with Anime4K off.
+4. If one pass stands out: dump its shaders (`VW_DUMP_SHADERS=1` with an empty
+   `user/shader` folder, so they compile again) and compare with what RADV does.
+5. If the 9070 XT is clean, the problem may be RDNA3 or iGPU-specific: ask bika66 for the same
+   profile. A reply draft (not posted yet): turn Anime4K off and check the title; then run with
+   the two variables above and attach the new log.
+
+Also possible on Linux: AMDVLK shares the Windows driver's backend. The 2025.Q2.1 package was
+unpacked into a session scratchpad but not run (downloaded driver code needs the owner's OK).
+
 ## What happened on 2026-11-09, evening (branch `claude/enhancements`)
 
 - **#74 iGPU:** render target clears that the game does with a compute fill are now image clears
