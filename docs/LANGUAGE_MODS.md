@@ -1,5 +1,8 @@
 # Playing in another language (experimental)
 
+> Just want to know which language you get and how to change it? Read
+> [LANGUAGES.md](LANGUAGES.md) first. This page has the details, and mods.
+
 The PS4 release this port runs has Japanese and Chinese text, and the fan English patch adds
 English. The Switch version's text adds English, French, German, Italian and Spanish as
 languages of their own, and two kinds of mod add other languages, or change the English.
