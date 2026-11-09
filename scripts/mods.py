@@ -302,6 +302,13 @@ def write_slots(overlay, merge, sources):
                     skipped += 1
                     continue
                 files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
+            # The fan English patch keeps its story without the line breaks it added for the
+            # Chinese boxes as <sheet>_original.fms. The game breaks Western lines itself, and
+            # the added breaks made narration lines overlap there: the slot takes the original.
+            for name in archive.files:
+                if name.casefold().endswith('_original.fms'):
+                    sheet = name[:-len('_original.fms')] + '.fms'
+                    files[sheet.casefold()] = (files.get(sheet.casefold(), (sheet,))[0], archive, name)
         cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
         print(f'Languages: {destination.name} from {", ".join(dict.fromkeys(l for l, _ in parts))}: '
               f'{len(files)} files{f", {skipped} pictures left out (Switch format)" if skipped else ""}',

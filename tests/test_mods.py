@@ -151,13 +151,16 @@ class ModTests(unittest.TestCase):
         chinese = fms.build(['\u8acb\u7a0d\u5019\u3002\u8acb\u7a0d\u5019\u3002'], template)
         english = fms.build(['Please wait. Saving the game in progress.'], template)
         self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcSysMsg.fms': chinese})
-        self.archive(self.game / 'Unicorn_CN.CPK', {'MsgSheet/UcSysMsg.fms': english, 'GUI/Interface.mbs': b'ui'})
+        self.archive(self.game / 'Unicorn_CN.CPK', {'MsgSheet/UcSysMsg.fms': english, 'GUI/Interface.mbs': b'ui',
+                                                   'MsgSheet/UcScriptMsgConv.fms': b'one\ntwo',
+                                                   'MsgSheet/UcScriptMsgConv_original.fms': b'one two'})
         with mock.patch.object(mods, 'archive_merge', return_value=merge):
             result = mods.build_overlay(self.game, self.root / 'out', [], None, 'english')
             other = mods.build_overlay(self.game, self.root / 'out', [], None, 'traditional_chinese')
         us = mods.cpk.Archive(result / 'Unicorn_US.CPK')
         self.assertEqual(us.read('MsgSheet/UcSysMsg.fms'), english)
         self.assertEqual(us.read('GUI/Interface.mbs'), b'ui')
+        self.assertEqual(us.read('MsgSheet/UcScriptMsgConv.fms'), b'one two')  # the game breaks the lines
         self.assertEqual(other, self.game.resolve())  # no view (and no new preparation) otherwise
         self.assertTrue(mods.english_text(self.game / 'Unicorn_CN.CPK'))
         self.assertFalse(mods.english_text(self.game / 'Unicorn_TW.CPK'))

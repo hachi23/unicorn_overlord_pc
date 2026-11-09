@@ -31,7 +31,7 @@ seek() {
         [[ -n $step ]] && pad "$step wait900"
         pad dump
         f=$(ls -t "$port/run_uo/drive/dumps"/output_*.png | head -1)
-        if bash "$port/tools/uo_ocr.sh" "$f" | grep -qi "$name"; then return 0; fi
+        if bash "$port/tools/uo_ocr.sh" "$f" | grep -qiE "$name"; then return 0; fi
     done
     echo "uo_story: $name not found" >&2; return 1
 }
@@ -56,10 +56,10 @@ pad "right wait1200 cross wait1500 cross wait2500 dump"
 # Ilenia (the orange-ringed 6) is a little up and right of the starting cursor; Valmore (the
 # armored 9) is below. Select her, Move, then Valmore (Select, Battle).
 pad "ly=0:120 wait300 lx=255:100 wait900"
-seek "enia" "${SPIRAL[@]}"
+seek "[il1]enia" "${SPIRAL[@]}"
 pad "cross wait1500 cross wait1500"
 pad "ly=255:300 wait400 lx=0:120 wait1200"
-seek "almor" "${SPIRAL[@]}"
+seek "a[il1]more" "${SPIRAL[@]}"
 pad "cross wait1500 cross wait4000 dump"
 echo "uo_story: prologue battle"
 # Encounters ask "Battle" (Cross); between fights Cross opens Ilenia's Move menu, which Circle
