@@ -1,4 +1,87 @@
-# Handoff (2026-10-20)
+# Handoff (2026-11-09)
+
+Start here. The sections below this one are older (2026-10-20 and before) and kept for history.
+
+## What happened on 2026-11-08/09
+
+Merged into `main`: #75 (windowed mode opens at the render size and fits the screen, #70), #76
+(World Map canvas pass stays 3840x2160 below 4K, #69), #77 (three-line story text fits the speech
+bubble, #73). Issue #56's Anime4K fix was already in v1.4.0 (`1d1dfef`); the reporter has not
+confirmed it yet.
+
+**PR #78, text languages** (`claude/western-languages`; issues #54, #71, #49):
+
+- The Asia eboot still has the game's Western languages: text language 1-5 open
+  `Unicorn_US/FR/ES/DE/IT.CPK` (a name table beside `_KO/_TW/_CN`), and `Unicorn.CPK` has their
+  fonts (`KiaroFont_L`, `AlbertusNovaFont_L` for title cards). Only the archives are missing.
+  The Switch archives have the same format and the same entry counts in every sheet.
+- **Text language** (Insert menu) has English, Français, Español, Deutsch, Italiano after the old
+  five keys (vw.ini indices unchanged). `src/probe.c` sets the game's language and falls back
+  with a log line when the archive is missing. In 1-5 the #73 re-wrap and bubble scaling are
+  off (`text_fit_disable`): the game breaks lines and sizes bubbles itself.
+- `scripts/mods.py` (`write_slots`, `build_overlay`): the chosen language's archive only, from
+  `data/languages/Unicorn_XX.CPK` (`VW_LANGUAGES_DIR`), a mod's `Unicorn_XX.CPK`, or for English
+  the fan patch's `Unicorn_TW/CN.CPK` (`english_from`, also from a mod). Switch pictures (`.ftx`)
+  are left out. `<sheet>_original.fms` replaces `<sheet>.fms`: the patch's story without the
+  breaks it added for the Chinese boxes (with them, narration lines overlapped in English mode).
+  Writing a slot makes a view of the game folder, and a view makes the start prepare the game
+  image again (`prepare_cache.key` has the folder path): that is why only the chosen slot is
+  written, and nothing for Chinese/Japanese.
+- **#49 (chapter title card shows one box)** is fixed when the text language is English: the
+  card used Traditional Chinese's large font, which has no Latin letters. Checked: chapter 1's
+  "The Unicorn Ring" shows with the Switch English text and with the fan patch's text.
+  Players keep the box in the default (Chinese-mode) setting; see open item 1.
+
+Checked in the game (Linux, RX 560X): French, German and English through the title, load screen,
+loading tips, the prologue story, the prologue battle, chapter 1's start; saves load across
+languages. Render resolutions: see "Regression runs" below. `tests/test_mods.py` covers the
+archive building.
+
+## Regression runs (2026-11-09, Linux, RX 560X, English-patch dump)
+
+- `tools/uo_story.sh`, New Game to chapter 1, text language English from the patch: native and
+  720p. The battle, the story and the title card were fine. Before the `_original.fms` fix the
+  opening narration's lines overlapped; now there is one line at a time.
+- Save A from #34 (field dialogue), default text language (Chinese mode, the patch's text) at
+  900p, 1800p, 4K and native: the dialogue is unchanged from before the branch (the patch's
+  typewriter-style Latin font, two-line bubble). English at 4K: the Western dialogue font, with
+  the game's own wrapping.
+- French and German from the Switch 1.05 archives: the title, menus, the opening and the camp
+  dialogue (native).
+- Not run on Windows. `run_uo/languages` on this machine is empty again: the Switch archives
+  are in `~/Downloads/uo_switch/romfs_upd/`.
+
+## Open items, in order
+
+1. **Make English the default for English-patch dumps?** Setup (`launcher/vw_launcher.py`,
+   the `english` dump) still writes `text_language=auto` (Chinese mode with English text), so
+   patch players only get the #49 fix if they pick English in the Insert menu. Switching the
+   default costs a game-image preparation at every start (the view; see above), unless
+   `prepare_cache` learns to key views by their contents instead of the temporary path. Doing
+   that first would also speed up starts with any mod.
+2. **#74 (ROG Ally, 14 FPS on the title and field):** not reproduced. Here title, field and
+   battle run at 60 on the RX 560X, and on the Vega 8 iGPU the battle is the slowest (27 FPS),
+   the opposite of the report. Asked the reporter for overlay screenshots, logs, power mode and
+   RAM/UMA size. Note: a hidden or minimized window here throttles vsync to ~20 FPS (Wayland),
+   so measure with `VW_VSYNC=0` or a visible window.
+3. **#71 Switch saves:** not started.
+4. Review leftovers on #78 (judgement calls, not done): the language list lives in five places
+   (probe.c tables, `vw_graphics.h`, overlay labels, `game_profiles.py` slots, `mods.py`
+   `SLOT_OF_LANGUAGE`); `english_text` is duplicated in `launcher/vw_launcher.py`; the
+   launcher's `--export-text` exports the Chinese archive for the new languages; tutorial
+   pictures stay the PS4 dump's in the Switch languages; three system messages name the Switch.
+
+## Driving the game unattended (Linux)
+
+- `tools/uo_pad.sh --launch <game>` starts the game wired to a pad file; then
+  `tools/uo_pad.sh "cross wait2000 lx=0:300 dump"` presses buttons, pushes the stick (0-255, ms)
+  and dumps frames into `run_uo/drive/dumps` (it uses a raw-to-PNG helper; check its path).
+- `tools/uo_story.sh <game>` plays New Game through the prologue battle into chapter 1 (about
+  15 min): the title card is among the last frames. It finds Ilenia and Valmore on the battle
+  map by reading the unit panels with tesseract (`tools/uo_ocr.sh`).
+- `VW_TEXT_LANGUAGE=english` etc. pass through; `render_resolution=` is in `run_uo/vw.ini`.
+
+# Handoff (2026-10-20, older)
 
 Read this first. The port's history and reverse-engineering notes are in
 [unicorn/HANDOFF.md](unicorn/HANDOFF.md), the GPU pipeline in [parallel_gpu.md](parallel_gpu.md).

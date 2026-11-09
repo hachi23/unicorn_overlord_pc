@@ -246,21 +246,102 @@ def merge_archives(overlay, merge, archives, loose=()):
               f'{f", {skipped} left out (another platform)" if skipped else ""}', file=sys.stderr)
 
 
-def build_overlay(game, out, mods):
+def language_files(folder, slots):
+    """(label, path, slot) of the language archives (`slots`, matched without case) in
+    `folder` or one folder level below it (a dump's romfs folder copied as it is), sorted by
+    path; each fills the slot of its own name."""
+    folder = Path(folder) if folder else None
+    if not folder or not folder.is_dir():
+        return []
+    wanted = {name.casefold() for name in slots}
+    found = [p for p in folder.iterdir() if p.is_file() and p.name.casefold() in wanted]
+    found += [p for d in folder.iterdir() if d.is_dir() for p in d.iterdir()
+              if p.is_file() and p.name.casefold() in wanted]
+    return [(folder.name, p, p.name) for p in sorted(found)]
+
+
+# vw.ini text_language keys (gpu/shim/vw_graphics.h) -> the archive the game opens for them.
+SLOT_OF_LANGUAGE = {'english': 'Unicorn_US.CPK', 'french': 'Unicorn_FR.CPK', 'spanish': 'Unicorn_ES.CPK',
+                    'german': 'Unicorn_DE.CPK', 'italian': 'Unicorn_IT.CPK'}
+
+
+def english_text(path):
+    """Whether a language archive's text is mostly Latin letters (the fan English patch's
+    Unicorn_TW/CN.CPK) rather than CJK, judged from MsgSheet/UcSysMsg.fms."""
+    try:
+        text = cpk.Archive(path).extract('MsgSheet/UcSysMsg.fms')
+    except (OSError, ValueError, KeyError):
+        return False
+    latin = sum(text.count(c) for c in b'etaoinsrhl')
+    return latin > sum(1 for b in text if 0xe0 <= b <= 0xef)
+
+
+def write_slots(overlay, merge, sources):
+    """The game's language archives for Western text (merge['slots']: the game opens
+    Unicorn_US/FR/ES/DE/IT.CPK for text languages 1-5, which the Asia dump lacks), each from
+    the archives for it in `sources` ((label, path, slot) in order: a later file wins),
+    over the game's own archive when it has one. Names ending in merge['skip'] (Switch
+    pictures) are left out: the game then shows those of Unicorn.CPK."""
+    by_slot = {}
+    for label, path, slot in sources:
+        by_slot.setdefault(slot.casefold(), []).append((label, path))
+    for slot in merge.get('slots', ()):
+        parts = by_slot.get(slot.casefold())
+        if not parts:
+            continue
+        destination = child(overlay, slot)
+        files, skipped = {}, 0
+        if is_link(destination):
+            base = cpk.Archive(link_target(destination))
+            files = {name.casefold(): (name, base, name) for name in base.files}
+            remove_link(destination)
+        for _, path in parts:
+            archive = cpk.Archive(path)
+            for name in archive.files:
+                if name.casefold().endswith(tuple(merge.get('skip', ()))):
+                    skipped += 1
+                    continue
+                files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
+            # The fan English patch keeps its story without the line breaks it added for the
+            # Chinese boxes as <sheet>_original.fms. The game breaks Western lines itself, and
+            # the added breaks made narration lines overlap there: the slot takes the original.
+            for name in archive.files:
+                if name.casefold().endswith('_original.fms'):
+                    sheet = name[:-len('_original.fms')] + '.fms'
+                    files[sheet.casefold()] = (files.get(sheet.casefold(), (sheet,))[0], archive, name)
+        cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
+        print(f'Languages: {destination.name} from {", ".join(dict.fromkeys(l for l, _ in parts))}: '
+              f'{len(files)} files{f", {skipped} pictures left out (Switch format)" if skipped else ""}',
+              file=sys.stderr)
+
+
+def build_overlay(game, out, mods, languages=None, text_language=None):
+    """The game folder as the game sees it: `game` itself, or a view (links) with the mods'
+    files and the language archives (`languages`: a folder of Switch Unicorn_XX.CPK files).
+    Only the archive of `text_language` (a vw.ini key) is written, since a view makes the start
+    prepare the game image again. For 'english' without a Unicorn_US.CPK, the fan English
+    patch's archive (merge['english_from'], in the game or a mod) becomes it: the game's English
+    mode then shows the patch's text with the Western fonts (chapter title cards, #49)."""
     game = Path(game).resolve(strict=True)
     names = game_names(game)
     merge = archive_merge(game) or {}
     merged = {name.casefold() for name in merge.get('archives', ())}
     folders = {name.casefold() for name in merge.get('folders', ())}
+    slots = {name.casefold() for name in merge.get('slots', ())}
     replacements = []
     archives = []
     loose = []
     owners = {}
+    slot_sources = language_files(languages, merge.get('slots', ()))
     for name, root in mods:
         count = 0
         for relative, source in mod_files(root, names):
-            if len(relative.parts) == 1 and relative.name.casefold() in merged:
+            top = relative.name.casefold() if len(relative.parts) == 1 else None
+            if top in merged:  # also into the Chinese archives, as before the slots
                 archives.append((name, source))
+            if top in slots:
+                slot_sources.append((name, source, relative.name))
+            if top in merged | slots:
                 count += 1
                 continue
             if relative.parts[0].casefold() in folders:
@@ -276,7 +357,18 @@ def build_overlay(game, out, mods):
             replacements.append((relative, source))
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
-    if not replacements and not archives and not loose:
+    # Only the chosen language's slot: a view makes the start prepare the game image again.
+    wanted = SLOT_OF_LANGUAGE.get(text_language or '')
+    slot_sources = [source for source in slot_sources if source[2].casefold() == (wanted or '').casefold()]
+    if wanted == 'Unicorn_US.CPK' and not slot_sources:
+        sources = [child(game, name) for name in merge.get('english_from', ())]
+        sources += [path for _, path in reversed(archives)
+                    if path.name.casefold() in {n.casefold() for n in merge.get('english_from', ())}]
+        for path in sources:
+            if path.is_file() and english_text(path):
+                slot_sources.append(('the English patch', path, wanted))
+                break
+    if not replacements and not archives and not loose and not slot_sources:
         return game
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -306,6 +398,8 @@ def build_overlay(game, out, mods):
         print(f'Mods: {replaced} game files replaced, {added} added', file=sys.stderr)
         if archives or loose:
             merge_archives(overlay, merge, archives, loose)
+        if slot_sources:
+            write_slots(overlay, merge, slot_sources)
         return overlay
     except BaseException:
         shutil.rmtree(overlay)
@@ -319,6 +413,9 @@ def main():
     parser.add_argument('--mods-dir', required=True, type=Path)
     parser.add_argument('--config', type=Path)
     parser.add_argument('--enabled', choices=('0', '1'), default='1')
+    parser.add_argument('--text-language', default='', help="vw.ini's text_language")
+    parser.add_argument('--languages-dir', type=Path,
+                        help='Switch language archives (Unicorn_US/FR/ES/DE/IT.CPK) for the text languages')
     args = parser.parse_args()
     layers = []
     if args.enabled == '1':
@@ -333,7 +430,7 @@ def main():
         else:
             for name in selected(args.mods_dir, args.config, names):
                 layers.append((name, args.mods_dir / name))
-    print(build_overlay(args.game, args.out, layers))
+    print(build_overlay(args.game, args.out, layers, args.languages_dir, args.text_language))
 
 
 if __name__ == '__main__':

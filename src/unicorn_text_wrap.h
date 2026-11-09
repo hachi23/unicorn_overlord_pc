@@ -48,6 +48,12 @@ static inline int text_fit_enabled(void) {
     return state > 0;
 }
 
+/* Off for the game's Western text languages (1-5): the game then wraps lines and sizes the
+ * bubbles itself, as in its Western releases. */
+static inline void text_fit_disable(void) {
+    __atomic_store_n(&text_fit_state, -1, __ATOMIC_RELAXED);
+}
+
 /* Lines of the text in `buffer` (at most `size` bytes, ending at the first zero). */
 static inline int text_bubble_lines(const unsigned char *buffer, size_t size) {
     int lines = 1;

@@ -44,6 +44,7 @@ enabled and go to the end of the list, in alphabetical order.
 | Variable | Effect |
 |---|---|
 | `VW_MODS_DIR` | Another mods folder. |
+| `VW_LANGUAGES_DIR` | Another folder for the Switch language archives (default `data/languages`, [LANGUAGE_MODS.md](LANGUAGE_MODS.md)). |
 | `VW_MODS_ENABLED=0` | Starts without any mod. |
 | `VW_MODS_CONFIG` | Another `mods.json`. |
 

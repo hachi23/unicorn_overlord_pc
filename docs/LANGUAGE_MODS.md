@@ -1,7 +1,49 @@
 # Playing in another language (experimental)
 
 The PS4 release this port runs has Japanese and Chinese text, and the fan English patch adds
-English. Two kinds of mod add other languages, or change the English:
+English. The Switch version's text adds English, French, German, Italian and Spanish as
+languages of their own, and two kinds of mod add other languages, or change the English.
+
+## English, French, German, Italian or Spanish from the Switch version
+
+The PS4 game still has the code for its Western languages: their fonts, line breaking and
+title logo. Only the text files are missing, and the Switch version has them. You need the
+Switch version of Unicorn Overlord dumped from your own console (update 1.05 recommended).
+
+1. **Find the language file** in the Switch dump's `romfs` (from the update, when you have it):
+   `Unicorn_US.CPK` (English), `Unicorn_FR.CPK` (French), `Unicorn_DE.CPK` (German),
+   `Unicorn_IT.CPK` (Italian) or `Unicorn_ES.CPK` (Spanish). You can copy several.
+2. **Copy it into the `languages` folder** in the data folder (the port makes that folder at
+   start; see [Before you start](#before-you-start) for where the data folder is):
+   ```text
+   data/
+     languages/
+       Unicorn_FR.CPK
+   ```
+3. **Pick the language.** Press **Insert** (R3+L2 on a controller) and set **Text language** to
+   **Français (Switch text)**, or the one you copied. Then restart the game.
+4. **Check that it loaded.** The newest log in `data/logs/` has lines like:
+   ```text
+   Languages: Unicorn_FR.CPK from languages: 34 files, 14 pictures left out (Switch format)
+   Text language: French
+   ```
+   Without the file the log says `French needs Unicorn_FR.CPK ...` and the game starts in its
+   default language.
+
+Saves work in every language: switch back and forth as you like.
+
+What was checked: the title screen, the load screen, loading tips and the opening story in
+French and German. The game wraps the lines itself, as in the Western releases.
+
+Known limits of the Switch languages:
+
+- **Tutorial pictures** with words in them stay those of your PS4 dump: the Switch pictures
+  are in another picture format.
+- **A few system messages** name the Nintendo Switch: the Switch text is used as it is.
+
+## Mods
+
+Two kinds of mod add other languages, or change the English:
 
 | Mod | What it is | Example |
 |---|---|---|
@@ -41,9 +83,12 @@ language files at each start. Turn the mod off and the game is back as it was.
    ```
    An extra folder level from unpacking (`mods/Portuguese/Portuguese v1.2/Unicorn_US.CPK`) also
    works. Readme files and pictures beside the file are ignored.
-4. **Set the text language to Chinese.** Press **Insert** (R3+L2 on a controller) and set
-   **Text Language** to **Traditional Chinese** or **Simplified Chinese**. The mod's text
-   replaces those two. With **Japanese** or **Korean** the mod has no effect.
+4. **Set the text language.** Press **Insert** (R3+L2 on a controller) and set
+   **Text language** to the one the file is named after: `Unicorn_US.CPK` is
+   **English (Switch text)**, `Unicorn_FR.CPK` **Français (Switch text)**, and so on. The game
+   then wraps the lines itself. The mod's text also replaces **Traditional Chinese** and
+   **Simplified Chinese**, as in earlier versions. With **Japanese** or **Korean** it has no
+   effect.
 5. **Restart the game.** The port merges the mod at each start.
 6. **Check that it loaded.** Open the newest log in `data/logs/` and look for a line like:
    ```text
@@ -101,7 +146,9 @@ goes to the end of the list.
 - **Only text.** The Switch files' pictures (help and tutorial images) are left out because the
   Switch picture format does not work on the PS4. Mods that replace the Switch `Unicorn.CPK`,
   other archives or `exefs` are not supported.
-- **Long text can run past its box.** Story lines over 54 characters are broken at spaces
+- **Long text can run past its box** when the text replaces Chinese. (In English, Français,
+  Deutsch, Italiano or Español the game breaks the lines itself and none of this applies.)
+  Story lines over 54 characters are broken at spaces
   automatically, because the Switch story text has almost no line breaks. The speech bubble holds
   two lines: a story line of three or more lines (common in the fan English patches, #73) is
   broken into two when they fit the bubble, and otherwise drawn smaller so that it fits
