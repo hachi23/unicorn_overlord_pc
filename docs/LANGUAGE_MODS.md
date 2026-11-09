@@ -158,8 +158,9 @@ goes to the end of the list.
 - **Letters the game's fonts lack show as a box.** The dialogue and menu fonts have the Latin
   accented letters: ã, ç, é and í were checked with Portuguese. Other letters and alphabets are
   untested.
-- **Chapter title cards show one box** (#49), as with the fan English patch: the large font
-  used there has only the Chinese titles' characters.
+- **Chapter title cards show one box** (#49) in the Chinese text languages: the large font
+  used there has only the Chinese titles' characters. A Western language from the Switch version
+  (above) has its own fonts.
 - **Only the text is replaced.** Everything else in the language file stays as in your dump:
   with the fan English patch that is its English interface, with the official Asia dump the
   Chinese one.

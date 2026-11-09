@@ -62,8 +62,9 @@ GAMES = {
                     'English text (a fan translation). Voices: Japanese or English, in the game\'s '
                     'Voice Language option.',
                     'Leave Text Language in the game\'s options on Game Default. Japanese there shows '
-                    'the Japanese text; Chinese shows English (Simplified Chinese with the patch\'s '
-                    'second release: Chinese).',
+                    'the Japanese text. The port runs the patch\'s text in the game\'s own English '
+                    'mode (Western fonts, the game\'s line breaks, chapter titles); Traditional '
+                    'Chinese in the in-game menu (Insert) > Text language brings back the old look.',
                     'With the patch\'s first release a few tutorial pictures show Japanese text; the '
                     'second release translates them.',
                 ),
@@ -844,8 +845,6 @@ def main(key):
             sys.exit(0)
         folder, dump, language = chosen
         settings['source_dir'] = folder
-        if dump == 'english' and language == 'auto' and english_text(folder) == {'cn'}:
-            language = 'simplified_chinese'  # the game binds Unicorn_TW.CPK by default
         if dump:
             import graphics_options
             settings.update(dump=dump, text_language=language)
@@ -859,6 +858,16 @@ def main(key):
         settings['game_dir'] = folder
         save_settings(data, settings)
 
+    if not settings.get('english_mode'):  # once, from the versions before Game Default was English
+        if settings.get('dump') == 'english' and settings.get('text_language') == 'simplified_chinese' \
+                and english_text(folder) == {'cn'}:
+            # Setup chose Simplified Chinese for a patch with its English in Unicorn_CN.CPK only,
+            # to show it at all; Game Default now runs it in the game's English mode (#49).
+            import graphics_options
+            graphics_options.write_keys(data / 'vw.ini', {'text_language': 'auto'})
+            settings.update(text_language='auto')
+        settings['english_mode'] = 1
+        save_settings(data, settings)
     check_for_update(game_info, data, settings)
     os.environ.update(VW_GAME_DIR=folder, VW_DATA_DIR=str(data), VW_CONFIG=str(data / 'vw.ini'))
     if FROZEN:

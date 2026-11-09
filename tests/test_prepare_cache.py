@@ -45,6 +45,19 @@ class PrepareCacheTest(unittest.TestCase):
         (self.out / 'boot-linked.bin').unlink()
         self.assertFalse(prepare_cache.valid(self.out, self.key()))
 
+    def test_a_view_of_the_same_game_with_other_archives_is_the_same_image(self):
+        (self.game / 'Unicorn_TW.CPK').write_bytes(b'chinese')
+        prepare_cache.store(self.out, self.key())
+        view = Path(self.temp.name) / 'mod-game-1234'
+        view.mkdir()
+        for entry in self.game.iterdir():
+            if entry.name != 'Unicorn_TW.CPK':
+                (view / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+        (view / 'Unicorn_US.CPK').write_bytes(b'english, written at this start')
+        self.assertTrue(prepare_cache.valid(self.out, prepare_cache.key(view, self.scripts, 'full')))
+        (self.game / 'eboot.bin').write_bytes(b'another eboot')
+        self.assertFalse(prepare_cache.valid(self.out, prepare_cache.key(view, self.scripts, 'full')))
+
     def test_forget_and_environment_override(self):
         prepare_cache.store(self.out, self.key())
         prepare_cache.forget(self.out)

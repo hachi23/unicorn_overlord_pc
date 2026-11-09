@@ -79,11 +79,11 @@ Measured on the test system above, 1080p:
 
 ## Graphics
 
-- **Chapter title card shows one box with the English patch** (#49): the card that opens a
-  chapter ("Call to Action") shows a single square instead of the title. The game draws those
-  titles in a large font that, in the Chinese releases the patch builds on, holds only the
-  Chinese titles' characters. The rest of the chapter is unaffected. Not fixed yet: pointing the
-  font at the English release's large font crashed the game when the card opened.
+- **Chapter title card shows one box in the Chinese text languages** (#49): the card that opens
+  a chapter draws its title in a large font that, in the Chinese releases, holds only the
+  Chinese titles' characters. With the English patch the port now runs the patch's text in the
+  game's English mode by default, where the card shows its title; choosing Traditional or
+  Simplified Chinese in the in-game menu brings the box back with English text.
 - **Language mods are experimental** (Switch text files such as `Unicorn_US.CPK`, JSON
   translations; [LANGUAGE_MODS.md](LANGUAGE_MODS.md)). Checked on the title menu and the opening
   dialogue with a Brazilian Portuguese Switch translation. Long menu texts can run past their

@@ -3,9 +3,11 @@
 """Skips the game image preparation (prepare.py, link_libc.py, link_modules.py,
 content_profile.py) when nothing it reads has changed since the last start.
 
-The key covers the preparation scripts' source, the game folder's eboot.bin, sce_module/ and
-sce_sys/ (size and modification time), the folder's top-level entries and the content SKU. A
-changed key, a missing output or VW_PREPARE_ALWAYS=1 prepares again.
+The key covers the preparation scripts' source, what preparation reads from the game folder
+(eboot.bin, sce_module/, sce_sys/, dvdroot_ps4/: size and modification time, through links) and
+the content SKU. Not the folder's path or its other files: a mod or language view (mods.py) is a
+new temporary folder with rewritten archives at every start, and the same game image. A changed
+key, a missing output or VW_PREPARE_ALWAYS=1 prepares again.
 """
 import hashlib
 import json
@@ -30,12 +32,12 @@ def key(game, scripts, sku):
     for script in sorted(scripts.glob('*.py')):
         digest.update(script.name.encode())
         digest.update(script.read_bytes())
-    files = [_stat(entry) for entry in sorted(game.iterdir())]
+    files = [_stat(game / 'eboot.bin'), _stat(game / 'dvdroot_ps4')]
     for sub in ('sce_module', 'sce_sys'):
         folder = game / sub
         if folder.is_dir():
             files += [[sub, *_stat(entry)] for entry in sorted(folder.iterdir()) if entry.is_file()]
-    return {'scripts': digest.hexdigest(), 'game': str(game), 'sku': sku, 'files': files}
+    return {'scripts': digest.hexdigest(), 'sku': sku, 'files': files}
 
 
 def valid(out, current):

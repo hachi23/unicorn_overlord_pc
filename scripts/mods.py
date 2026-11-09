@@ -260,6 +260,10 @@ def language_files(folder, slots):
     return [(folder.name, p, p.name) for p in sorted(found)]
 
 
+# The text language the game starts with (build_overlay: 'auto' becomes 'english' with the fan
+# English patch); main() prints it after the folder for run.py.
+TEXT_LANGUAGE = 'auto'
+
 # vw.ini text_language keys (gpu/shim/vw_graphics.h) -> the archive the game opens for them.
 SLOT_OF_LANGUAGE = {'english': 'Unicorn_US.CPK', 'french': 'Unicorn_FR.CPK', 'spanish': 'Unicorn_ES.CPK',
                     'german': 'Unicorn_DE.CPK', 'italian': 'Unicorn_IT.CPK'}
@@ -319,9 +323,10 @@ def build_overlay(game, out, mods, languages=None, text_language=None):
     """The game folder as the game sees it: `game` itself, or a view (links) with the mods'
     files and the language archives (`languages`: a folder of Switch Unicorn_XX.CPK files).
     Only the archive of `text_language` (a vw.ini key) is written, since a view makes the start
-    prepare the game image again. For 'english' without a Unicorn_US.CPK, the fan English
-    patch's archive (merge['english_from'], in the game or a mod) becomes it: the game's English
-    mode then shows the patch's text with the Western fonts (chapter title cards, #49)."""
+    prepare the game image again. For 'english' or 'auto' without a Unicorn_US.CPK, the fan
+    English patch's archive (merge['english_from'], in a mod or the game) becomes it, and the
+    language English (TEXT_LANGUAGE): the game's English mode shows the patch's text with the
+    Western fonts (chapter title cards, #49)."""
     game = Path(game).resolve(strict=True)
     names = game_names(game)
     merge = archive_merge(game) or {}
@@ -358,15 +363,20 @@ def build_overlay(game, out, mods, languages=None, text_language=None):
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
     # Only the chosen language's slot: a view makes the start prepare the game image again.
-    wanted = SLOT_OF_LANGUAGE.get(text_language or '')
+    # 'auto' (the game's default) is English with the fan English patch: Chinese mode would show
+    # its text in the Chinese fonts, and chapter title cards as one box (#49).
+    global TEXT_LANGUAGE
+    TEXT_LANGUAGE = text_language or 'auto'
+    wanted = SLOT_OF_LANGUAGE.get(TEXT_LANGUAGE)
     slot_sources = [source for source in slot_sources if source[2].casefold() == (wanted or '').casefold()]
-    if wanted == 'Unicorn_US.CPK' and not slot_sources:
-        sources = [child(game, name) for name in merge.get('english_from', ())]
-        sources += [path for _, path in reversed(archives)
-                    if path.name.casefold() in {n.casefold() for n in merge.get('english_from', ())}]
+    if TEXT_LANGUAGE in ('auto', 'english') and not slot_sources:
+        english_from = {name.casefold() for name in merge.get('english_from', ())}
+        sources = [path for _, path in reversed(archives) if path.name.casefold() in english_from]
+        sources += [child(game, name) for name in merge.get('english_from', ())]  # mods first
         for path in sources:
             if path.is_file() and english_text(path):
-                slot_sources.append(('the English patch', path, wanted))
+                slot_sources.append(('the English patch', path, 'Unicorn_US.CPK'))
+                TEXT_LANGUAGE = 'english'
                 break
     if not replacements and not archives and not loose and not slot_sources:
         return game
@@ -431,6 +441,7 @@ def main():
             for name in selected(args.mods_dir, args.config, names):
                 layers.append((name, args.mods_dir / name))
     print(build_overlay(args.game, args.out, layers, args.languages_dir, args.text_language))
+    print(TEXT_LANGUAGE)
 
 
 if __name__ == '__main__':

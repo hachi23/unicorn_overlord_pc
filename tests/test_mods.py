@@ -157,11 +157,15 @@ class ModTests(unittest.TestCase):
         with mock.patch.object(mods, 'archive_merge', return_value=merge):
             result = mods.build_overlay(self.game, self.root / 'out', [], None, 'english')
             other = mods.build_overlay(self.game, self.root / 'out', [], None, 'traditional_chinese')
+            self.assertEqual(mods.TEXT_LANGUAGE, 'traditional_chinese')
+            default = mods.build_overlay(self.game, self.root / 'out', [], None, 'auto')
+            self.assertEqual(mods.TEXT_LANGUAGE, 'english')  # Game Default is English with the patch
         us = mods.cpk.Archive(result / 'Unicorn_US.CPK')
         self.assertEqual(us.read('MsgSheet/UcSysMsg.fms'), english)
         self.assertEqual(us.read('GUI/Interface.mbs'), b'ui')
         self.assertEqual(us.read('MsgSheet/UcScriptMsgConv.fms'), b'one two')  # the game breaks the lines
-        self.assertEqual(other, self.game.resolve())  # no view (and no new preparation) otherwise
+        self.assertEqual(other, self.game.resolve())  # no view otherwise
+        self.assertEqual(mods.cpk.Archive(default / 'Unicorn_US.CPK').read('MsgSheet/UcSysMsg.fms'), english)
         self.assertTrue(mods.english_text(self.game / 'Unicorn_CN.CPK'))
         self.assertFalse(mods.english_text(self.game / 'Unicorn_TW.CPK'))
 
@@ -235,7 +239,7 @@ class ModTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(ROOT / 'scripts/mods.py'), str(self.game),
                 '--out', str(self.root / 'out'), '--mods-dir', str(self.moddir), '--enabled', enabled],
                 capture_output=True, text=True, check=True)
-            self.assertEqual((Path(result.stdout.strip()) / 'game_data/data/a.wad').read_bytes(), expected)
+            self.assertEqual((Path(result.stdout.splitlines()[0]) / 'game_data/data/a.wad').read_bytes(), expected)
 
     def test_app0_wrapped_mod_discovered(self):
         self.moddir.mkdir()
