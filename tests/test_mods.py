@@ -143,6 +143,40 @@ class ModTests(unittest.TestCase):
         self.assertEqual(none, self.game.resolve())
         self.assertEqual(chinese, self.game.resolve())  # no view, so no new preparation at start
 
+    def test_older_switch_sheets_get_the_games_entry_numbers(self):
+        import fms
+        def sheet(strings):
+            header = (b'FMSB' + bytes(4) + (0x20).to_bytes(4, 'little') + bytes(8)
+                      + len(strings).to_bytes(4, 'little') + (1).to_bytes(4, 'little') + bytes(4))
+            return fms.build(strings, fms.build([''] * len(strings), header))
+        merge = {'slots': {'french': 'Unicorn_FR.CPK'}, 'english_from': ('Unicorn_TW.CPK',), 'skip': ('.ftx',)}
+        self.archive(self.game / 'Unicorn_TW.CPK', {
+            'MsgSheet/UcOption.fms': sheet(['選項'] * 4),
+            'MsgSheet/UcSysMsg.fms': sheet(['請稍候'] * 3),
+            'MsgSheet/UcHelpList.fms': sheet(['說明'] * 2)})
+        languages = self.root / 'languages'
+        languages.mkdir()
+        # Switch 1.0.0: the update added an entry in the middle of UcOption and one at the end of
+        # UcSysMsg; UcHelpList is unchanged.
+        self.archive(languages / 'Unicorn_FR.CPK', {
+            'MsgSheet/UcOption.fms': sheet(['Options', 'Son', 'Langue']),
+            'MsgSheet/UcSysMsg.fms': sheet(['Oui', 'Non']),
+            'MsgSheet/UcHelpList.fms': sheet(['Aide', 'Carte']),
+            'GUI/Interface.mbs': b'1.0.0 layout', 'Help/Help_00.ftx': b'nvt'})
+        table = self.root / 'switch_text_100.json'
+        table.write_text(json.dumps({'MsgSheet/UcOption.fms': {'from': 3, 'to': 4, 'runs': [[0, 0, 1], [2, 1, 2]]}}))
+        with mock.patch.object(mods, 'archive_merge', return_value=merge), mock.patch.object(mods, 'SWITCH_100', table):
+            result = mods.build_overlay(self.game, self.root / 'out', [], languages, 'french')
+        french = mods.cpk.Archive(result / 'Unicorn_FR.CPK')
+        def strings(name):
+            return fms.parse(mods.cpk.crilayla(french.read(name)))
+        # An entry the update added keeps the game's own text.
+        self.assertEqual(strings('MsgSheet/UcOption.fms'), ['Options', '\u9078\u9805', 'Son', 'Langue'])
+        self.assertEqual(strings('MsgSheet/UcSysMsg.fms'), ['Oui', 'Non', '\u8acb\u7a0d\u5019'])  # no map: filled at the end
+        self.assertEqual(strings('MsgSheet/UcHelpList.fms'), ['Aide', 'Carte'])
+        # Only the text of a 1.0.0 archive: its UI layout lacks the rows added later.
+        self.assertEqual(set(french.files), {'MsgSheet/UcOption.fms', 'MsgSheet/UcSysMsg.fms', 'MsgSheet/UcHelpList.fms'})
+
     def test_english_patch_archive_becomes_the_english_archive_when_english_is_chosen(self):
         import fms
         merge = {'slots': {'english': 'Unicorn_US.CPK'}, 'english_from': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'skip': ('.ftx',)}

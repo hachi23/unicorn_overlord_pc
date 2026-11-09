@@ -185,6 +185,61 @@ def child_name(archive, name):
     return next(n for n in archive.files if n.casefold() == name.casefold())
 
 
+# Where the entries of the Switch 1.0.0 text sheets go in the PS4 v01.04 (= Switch 1.05) ones:
+# {sheet: {'from': 1.0.0 count, 'to': count, 'runs': [[index, 1.0.0 index, length], ...]}}
+# (tools/re/switch_text_map.py).
+SWITCH_100 = Path(__file__).with_name('switch_text_100.json')
+
+
+def fit_sheets(files, reference, memory):
+    """Gives each text sheet in `files` (casefolded name -> (name, archive, name there)) the
+    number of entries of the sheet of that name in `reference` (the game's own language archive):
+    the game reads entries by number, and a short sheet crashed it at start (#83, #85: the
+    Switch 1.0.0 archives). A Switch 1.0.0 sheet is laid out again with SWITCH_100; an entry
+    1.05 added keeps the reference's text (English with the fan patch). Any other short sheet is
+    filled up at its end from the reference. Returns the names of the sheets changed."""
+    import fms
+    table = json.loads(SWITCH_100.read_text())
+    changed = []
+    for key, (spelling, archive, original) in list(files.items()):
+        if not key.endswith('.fms') or archive is reference:
+            continue
+        try:
+            template = cpk.crilayla(reference.read(child_name(reference, spelling)))
+            ours = fms.parse(template)
+            theirs = fms.parse(memory.read(original) if archive is memory else cpk.crilayla(archive.read(original)))
+        except (StopIteration, KeyError, ValueError):
+            continue  # not a sheet the game has, or not a text sheet
+        if len(theirs) == len(ours):
+            continue
+        layout = next((t for n, t in table.items() if n.casefold() == key), None)
+        strings = list(ours)
+        if layout and (layout['from'], layout['to']) == (len(theirs), len(ours)):
+            for start, source, length in layout['runs']:
+                strings[start:start + length] = theirs[source:source + length]
+        elif len(theirs) < len(ours):
+            strings[:len(theirs)] = theirs
+        else:
+            continue  # longer: the game never reads past its own count
+        memory.add(spelling, fms.build(strings, template))
+        files[key] = (spelling, memory, spelling)
+        changed.append(spelling)
+    return changed
+
+
+def older_switch(archive):
+    """Whether `archive` is a Switch 1.0.0 language archive (a sheet has the 1.0.0 entry count of
+    SWITCH_100). Only its text sheets are used: its GUI/Interface.mbs is the 1.0.0 layout, without
+    the rows later updates added, and broke the Options screen."""
+    import fms
+    for sheet, layout in json.loads(SWITCH_100.read_text()).items():
+        try:
+            return len(fms.parse(cpk.crilayla(archive.read(child_name(archive, sheet))))) == layout['from']
+        except (StopIteration, KeyError, ValueError):
+            continue
+    return False
+
+
 def merge_archives(overlay, merge, archives, loose=()):
     """Writes each of the game's merge['into'] archives in `overlay` again with the files of
     `archives` ((mod, path) in mod order: a later mod's file wins) in place of or beside its own,
@@ -204,13 +259,17 @@ def merge_archives(overlay, merge, archives, loose=()):
         files = {name.casefold(): (name, base, name) for name in base.files}
         taken, skipped = set(), 0
         for mod, archive in sources:
+            text_only = older_switch(archive)
             for name in archive.files:
+                if text_only and not name.casefold().endswith('.fms'):
+                    continue
                 if name.casefold().endswith(tuple(merge.get('skip', ()))):
                     skipped += 1
                     continue
                 files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
                 taken.add(name.casefold())
         memory = cpk.Memory()
+        fitted = fit_sheets(files, base, memory)
         for sheet in merge.get('rewrap', ()):
             spelling, archive, original = files.get(sheet.casefold(), (None, base, None))
             if archive is base:
@@ -244,6 +303,13 @@ def merge_archives(overlay, merge, archives, loose=()):
         cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
         print(f'Mods (experimental): {destination.name}: {len(taken)} files from {", ".join(mods)}'
               f'{f", {skipped} left out (another platform)" if skipped else ""}', file=sys.stderr)
+        print_fitted(destination.name, fitted)
+
+
+def print_fitted(archive, sheets):
+    if sheets:
+        print(f'Languages: {archive}: {len(sheets)} text sheets fitted to this version\'s entries '
+              f'(an older Switch archive: only its text is used): {", ".join(sheets)}', file=sys.stderr)
 
 
 def language_files(folder, slots):
@@ -284,6 +350,10 @@ def write_slots(overlay, merge, sources):
     over the game's own archive when it has one. Names ending in merge['skip'] (Switch
     pictures) are left out, except from the English patch (PS4 pictures): the game then shows
     those of Unicorn.CPK."""
+    # The game's own language archive (Traditional Chinese, or the English patch): the number of
+    # entries each sheet must have (fit_sheets).
+    reference = next((child(overlay, name) for name in merge.get('english_from', ())
+                      if child(overlay, name).exists()), None)
     by_slot = {}
     for label, path, slot in sources:
         by_slot.setdefault(slot.casefold(), []).append((label, path))
@@ -299,7 +369,10 @@ def write_slots(overlay, merge, sources):
             remove_link(destination)
         for label, path in parts:
             archive = cpk.Archive(path)
+            text_only = older_switch(archive)
             for name in archive.files:
+                if text_only and not name.casefold().endswith('.fms'):
+                    continue
                 # The patch's own pictures are PS4 ones (the English tutorial pictures).
                 if label != ENGLISH_PATCH and name.casefold().endswith(tuple(merge.get('skip', ()))):
                     skipped += 1
@@ -312,10 +385,12 @@ def write_slots(overlay, merge, sources):
                 if name.casefold().endswith('_original.fms'):
                     sheet = name[:-len('_original.fms')] + '.fms'
                     files[sheet.casefold()] = (files.get(sheet.casefold(), (sheet,))[0], archive, name)
+        fitted = fit_sheets(files, cpk.Archive(reference), cpk.Memory()) if reference else []
         cpk.write(destination, {name: (archive, original) for name, archive, original in files.values()})
         print(f'Languages: {destination.name} from {", ".join(dict.fromkeys(l for l, _ in parts))}: '
               f'{len(files)} files{f", {skipped} pictures left out (Switch format)" if skipped else ""}',
               file=sys.stderr)
+        print_fitted(destination.name, fitted)
 
 
 def build_overlay(game, out, mods, languages=None, text_language=None):
