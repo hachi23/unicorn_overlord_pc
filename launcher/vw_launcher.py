@@ -147,28 +147,15 @@ def check_game(game_info, folder):
 
 def english_text(folder):
     """The Chinese text archives ('cn', 'tw') of a dump that hold English text: the fan English
-    patch puts its text there (version 1: the same file in both; later versions need not). Read
-    from MsgSheet/UcSysMsg.fms: mostly Latin letters, or mostly CJK (UTF-8 lead bytes E0-EF).
-    Names are matched without case, as the game does (dump_files)."""
-    import cpk
+    patch puts its text there (version 1: the same file in both; later versions need not).
+    Judged by mods.english_text; names are matched without case, as the game does (dump_files)."""
+    from mods import english_text as latin
     try:
         files = {name: source for name, (source, _) in dump_files(folder).items()}
     except OSError:
         return set()
-    found = set()
-    for key in ('cn', 'tw'):
-        path = files.get(f'unicorn_{key}.cpk'.casefold())
-        if not path:
-            continue
-        try:
-            text = cpk.Archive(path).extract('MsgSheet/UcSysMsg.fms')
-        except (OSError, ValueError, KeyError):
-            continue
-        latin = sum(text.count(c) for c in b'etaoinsrhl')
-        cjk = sum(1 for b in text if 0xe0 <= b <= 0xef)
-        if latin > cjk:
-            found.add(key)
-    return found
+    return {key for key in ('cn', 'tw')
+            if (path := files.get(f'unicorn_{key}.cpk'.casefold())) and latin(path)}
 
 
 def detect_dump(folder):

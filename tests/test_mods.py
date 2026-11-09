@@ -152,6 +152,7 @@ class ModTests(unittest.TestCase):
         english = fms.build(['Please wait. Saving the game in progress.'], template)
         self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcSysMsg.fms': chinese})
         self.archive(self.game / 'Unicorn_CN.CPK', {'MsgSheet/UcSysMsg.fms': english, 'GUI/Interface.mbs': b'ui',
+                                                   'Help/Help_00.ftx': b'ps4 picture',
                                                    'MsgSheet/UcScriptMsgConv.fms': b'one\ntwo',
                                                    'MsgSheet/UcScriptMsgConv_original.fms': b'one two'})
         with mock.patch.object(mods, 'archive_merge', return_value=merge):
@@ -163,6 +164,7 @@ class ModTests(unittest.TestCase):
         us = mods.cpk.Archive(result / 'Unicorn_US.CPK')
         self.assertEqual(us.read('MsgSheet/UcSysMsg.fms'), english)
         self.assertEqual(us.read('GUI/Interface.mbs'), b'ui')
+        self.assertEqual(us.read('Help/Help_00.ftx'), b'ps4 picture')  # the patch's pictures are PS4 ones
         self.assertEqual(us.read('MsgSheet/UcScriptMsgConv.fms'), b'one two')  # the game breaks the lines
         self.assertEqual(other, self.game.resolve())  # no view otherwise
         self.assertEqual(mods.cpk.Archive(default / 'Unicorn_US.CPK').read('MsgSheet/UcSysMsg.fms'), english)
