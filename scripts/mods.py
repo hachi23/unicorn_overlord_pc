@@ -256,18 +256,29 @@ def language_files(folder, slots):
     found = [p for p in folder.iterdir() if p.is_file() and p.name.casefold() in wanted]
     found += [p for d in folder.iterdir() if d.is_dir() for p in d.iterdir()
               if p.is_file() and p.name.casefold() in wanted]
-    return [(folder.name, p) for p in sorted(found)]
+    return [(folder.name, p, p.name) for p in sorted(found)]
+
+
+def english_text(path):
+    """Whether a language archive's text is mostly Latin letters (the fan English patch's
+    Unicorn_TW/CN.CPK) rather than CJK, judged from MsgSheet/UcSysMsg.fms."""
+    try:
+        text = cpk.Archive(path).extract('MsgSheet/UcSysMsg.fms')
+    except (OSError, ValueError, KeyError):
+        return False
+    latin = sum(text.count(c) for c in b'etaoinsrhl')
+    return latin > sum(1 for b in text if 0xe0 <= b <= 0xef)
 
 
 def write_slots(overlay, merge, sources):
     """The game's language archives for Western text (merge['slots']: the game opens
     Unicorn_US/FR/ES/DE/IT.CPK for text languages 1-5, which the Asia dump lacks), each from
-    the Switch archives of that name in `sources` ((label, path) in order: a later file wins),
+    the archives for it in `sources` ((label, path, slot) in order: a later file wins),
     over the game's own archive when it has one. Names ending in merge['skip'] (Switch
     pictures) are left out: the game then shows those of Unicorn.CPK."""
     by_slot = {}
-    for label, path in sources:
-        by_slot.setdefault(path.name.casefold(), []).append((label, path))
+    for label, path, slot in sources:
+        by_slot.setdefault(slot.casefold(), []).append((label, path))
     for slot in merge.get('slots', ()):
         parts = by_slot.get(slot.casefold())
         if not parts:
@@ -291,9 +302,13 @@ def write_slots(overlay, merge, sources):
               file=sys.stderr)
 
 
-def build_overlay(game, out, mods, languages=None):
+def build_overlay(game, out, mods, languages=None, text_language=None):
     """The game folder as the game sees it: `game` itself, or a view (links) with the mods'
-    files and the language archives (`languages`: a folder of Switch Unicorn_XX.CPK files)."""
+    files and the language archives (`languages`: a folder of Switch Unicorn_XX.CPK files).
+    With `text_language` 'english' and no Unicorn_US.CPK from either, the fan English patch's
+    archive (merge['english_from']) becomes it: the game's English mode then shows the patch's
+    text with the Western fonts (chapter title cards, #49). Only then, since a view makes the
+    start prepare the game image again."""
     game = Path(game).resolve(strict=True)
     names = game_names(game)
     merge = archive_merge(game) or {}
@@ -312,7 +327,7 @@ def build_overlay(game, out, mods, languages=None):
                 if relative.name.casefold() in merged:
                     archives.append((name, source))
                 if relative.name.casefold() in slots:
-                    slot_sources.append((name, source))
+                    slot_sources.append((name, source, relative.name))
                 count += 1
                 continue
             if relative.parts[0].casefold() in folders:
@@ -328,6 +343,12 @@ def build_overlay(game, out, mods, languages=None):
             replacements.append((relative, source))
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
+    if text_language == 'english' and not any(slot.casefold() == 'unicorn_us.cpk' for _, _, slot in slot_sources):
+        for archive in merge.get('english_from', ()):
+            path = child(game, archive)
+            if path.is_file() and english_text(path):
+                slot_sources.append(('the English patch', path, 'Unicorn_US.CPK'))
+                break
     if not replacements and not archives and not loose and not slot_sources:
         return game
     out = Path(out).resolve()
@@ -373,6 +394,7 @@ def main():
     parser.add_argument('--mods-dir', required=True, type=Path)
     parser.add_argument('--config', type=Path)
     parser.add_argument('--enabled', choices=('0', '1'), default='1')
+    parser.add_argument('--text-language', default='', help="vw.ini's text_language")
     parser.add_argument('--languages-dir', type=Path,
                         help='Switch language archives (Unicorn_US/FR/ES/DE/IT.CPK) for the text languages')
     args = parser.parse_args()
@@ -389,7 +411,7 @@ def main():
         else:
             for name in selected(args.mods_dir, args.config, names):
                 layers.append((name, args.mods_dir / name))
-    print(build_overlay(args.game, args.out, layers, args.languages_dir))
+    print(build_overlay(args.game, args.out, layers, args.languages_dir, args.text_language))
 
 
 if __name__ == '__main__':

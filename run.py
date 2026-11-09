@@ -268,6 +268,8 @@ def main():
                            '--config', env.get('VW_MODS_CONFIG', data / 'mods.json'),
                            '--enabled', env.get('VW_MODS_ENABLED', '1'),
                            '--languages-dir', languages,
+                           '--text-language', env.get('VW_TEXT_LANGUAGE') or
+                           graphics_options.read_ini(env['VW_CONFIG']).get('text_language', ''),
                            capture=True).strip())
     mod_view = game if game.resolve() != original_game else None
     try:

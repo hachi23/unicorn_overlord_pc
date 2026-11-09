@@ -139,6 +139,25 @@ class ModTests(unittest.TestCase):
         self.assertEqual(mods.cpk.Archive(fixed / 'Unicorn_TW.CPK').read('MsgSheet/UcSysMsg.fms'), b'francais corrige')
         self.assertEqual(none, self.game.resolve())
 
+    def test_english_patch_archive_becomes_the_english_archive_when_english_is_chosen(self):
+        import fms
+        merge = {'slots': ('Unicorn_US.CPK',), 'english_from': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'skip': ('.ftx',)}
+        template = fms.build([''], b'FMSB' + bytes(4) + (0x20).to_bytes(4, 'little') + bytes(8)
+                             + (1).to_bytes(4, 'little') + (1).to_bytes(4, 'little') + bytes(4))
+        chinese = fms.build(['\u8acb\u7a0d\u5019\u3002\u8acb\u7a0d\u5019\u3002'], template)
+        english = fms.build(['Please wait. Saving the game in progress.'], template)
+        self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcSysMsg.fms': chinese})
+        self.archive(self.game / 'Unicorn_CN.CPK', {'MsgSheet/UcSysMsg.fms': english, 'GUI/Interface.mbs': b'ui'})
+        with mock.patch.object(mods, 'archive_merge', return_value=merge):
+            result = mods.build_overlay(self.game, self.root / 'out', [], None, 'english')
+            other = mods.build_overlay(self.game, self.root / 'out', [], None, 'traditional_chinese')
+        us = mods.cpk.Archive(result / 'Unicorn_US.CPK')
+        self.assertEqual(us.read('MsgSheet/UcSysMsg.fms'), english)
+        self.assertEqual(us.read('GUI/Interface.mbs'), b'ui')
+        self.assertEqual(other, self.game.resolve())  # no view (and no new preparation) otherwise
+        self.assertTrue(mods.english_text(self.game / 'Unicorn_CN.CPK'))
+        self.assertFalse(mods.english_text(self.game / 'Unicorn_TW.CPK'))
+
     def test_translation_sheets_merged_into_language_archives(self):
         import fms
         merge = {'archives': (), 'into': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'folders': ('MsgSheet',)}
