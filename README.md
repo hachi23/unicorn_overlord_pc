@@ -143,6 +143,9 @@ template and attach:
 
 ### Other languages (experimental)
 
+**New to this? Start with [docs/LANGUAGES.md](docs/LANGUAGES.md)**: which language you get, how
+to change it, and how to add more, step by step.
+
 With the Switch version dumped from your own console, the game also runs in English, French,
 German, Italian or Spanish: copy that language's `Unicorn_XX.CPK` from the Switch dump into
 `data/languages/` and pick it under **Text language** (Insert menu). Fan translations made for
