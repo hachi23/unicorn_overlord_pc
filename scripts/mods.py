@@ -369,10 +369,15 @@ def build_overlay(game, out, mods, languages=None, text_language=None):
     TEXT_LANGUAGE = text_language or 'auto'
     wanted = SLOT_OF_LANGUAGE.get(TEXT_LANGUAGE)
     slot_sources = [source for source in slot_sources if source[2].casefold() == (wanted or '').casefold()]
-    if TEXT_LANGUAGE in ('auto', 'english') and not slot_sources:
+    # Translation mods (JSON sheets, a Switch archive merged into the Chinese ones) are read in
+    # Chinese mode: with one, Game Default stays there.
+    translation = bool(archives or loose)
+    if (TEXT_LANGUAGE == 'english' or (TEXT_LANGUAGE == 'auto' and not translation)) and not slot_sources:
         english_from = {name.casefold() for name in merge.get('english_from', ())}
-        sources = [path for _, path in reversed(archives) if path.name.casefold() in english_from]
-        sources += [child(game, name) for name in merge.get('english_from', ())]  # mods first
+        # A mod's Unicorn_TW/CN.CPK (the patch installed as a mod) replaces the game's.
+        sources = [source for relative, source in reversed(replacements)
+                   if len(relative.parts) == 1 and relative.name.casefold() in english_from]
+        sources += [child(game, name) for name in merge.get('english_from', ())]
         for path in sources:
             if path.is_file() and english_text(path):
                 slot_sources.append(('the English patch', path, 'Unicorn_US.CPK'))
