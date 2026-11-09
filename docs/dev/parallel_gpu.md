@@ -696,3 +696,19 @@ Removed, all opt-in and measured neutral or slower above: the texture binding he
 runtime's image access hook), hot pages (`VW_HOT_PAGES`, toggle 32768) and async fences
 (`VW_ASYNC_FENCES`, toggle 262144). Kept: userfaultfd tracking (`VW_UFFD`, upstream's
 implementation). Benchmark afterwards: 53.5 FPS, stage B 4.02 µs/draw (no regression).
+
+## Render target clears by compute (2026-11-09, #74)
+
+- UO clears its render targets with a guest compute shader (`cs 2ba388c6`): every thread stores
+  buffer 1's first dword to buffer 2. On the battle map it ran 21 times per frame (~175 MB of
+  writes at 1080p), and every target cleared that way was then uploaded again from the buffer
+  (three 1920x1080 image uploads per frame). Integrated GPUs share slow memory, so both hurt.
+- `ExecuteFillShaderHLE` (vk_shader_hle.cpp) clears the image instead when the range is exactly
+  one single-level R8G8B8A8Unorm color image; anything else still runs the shader. Toggle
+  1 << 53 switches it off.
+- Vega 8 (RAVEN) battle map, `VW_GPU_PROFILE=1`: native 37.9 -> 29.9 ms GPU per frame,
+  25.8 -> 32.5 FPS; 720p 37.6 -> 46.2 FPS. RX 560X: 60 either way. Field dialogue frames match
+  the ones before the change; battle frames differ only where things move.
+- What is left on the Vega 8 is the game's own work: a 127-sample blur at 960x540 (fixed size,
+  ~6.8 ms at every render resolution) and the main 1080p passes.
+
