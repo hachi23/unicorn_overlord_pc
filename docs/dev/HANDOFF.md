@@ -30,7 +30,7 @@ confirmed it yet.
 - **#49 (chapter title card shows one box)** is fixed when the text language is English: the
   card used Traditional Chinese's large font, which has no Latin letters. Checked: chapter 1's
   "The Unicorn Ring" shows with the Switch English text and with the fan patch's text.
-  Players keep the box in the default (Chinese-mode) setting; see open item 1.
+  Since `claude/english-default` this is also the default for patch players (open item 1).
 
 Checked in the game (Linux, RX 560X): French, German and English through the title, load screen,
 loading tips, the prologue story, the prologue battle, chapter 1's start; saves load across
@@ -53,23 +53,30 @@ archive building.
 
 ## Open items, in order
 
-1. **Make English the default for English-patch dumps?** Setup (`launcher/vw_launcher.py`,
-   the `english` dump) still writes `text_language=auto` (Chinese mode with English text), so
-   patch players only get the #49 fix if they pick English in the Insert menu. Switching the
-   default costs a game-image preparation at every start (the view; see above), unless
-   `prepare_cache` learns to key views by their contents instead of the temporary path. Doing
-   that first would also speed up starts with any mod.
-2. **#74 (ROG Ally, 14 FPS on the title and field):** not reproduced. Here title, field and
+1. **#49 for patch players: done after #78** (branch `claude/english-default`). Game Default
+   is the game's English mode when the English patch is in the dump or a mod (`mods.py`
+   `TEXT_LANGUAGE`, passed to the game as `VW_TEXT_LANGUAGE` by run.py). It stays Chinese mode
+   with a translation mod (JSON sheets or a Switch archive merged into the Chinese ones), and
+   Traditional/Simplified Chinese in the menu shows the patch the old way. The preparation
+   cache now keys on what preparation reads (eboot.bin, sce_module, sce_sys), not on the folder,
+   so the view no longer costs a preparation. The second patch release's 14 English tutorial
+   pictures are kept. Setups that had Simplified Chinese written for a CN-only patch move to Game
+   Default once (`english_mode` in launcher.json). Checked: two starts on the patch dump (English
+   title, "preparation skipped" on the view), unit tests. Not checked: Windows, and a full
+   chapter with the second patch release.
+2. **#71 Switch saves:** not possible yet; see [SWITCH_SAVES.md](SWITCH_SAVES.md). The Switch
+   save struct has the same header and version but is 0x2CF0 bytes larger with moved blocks.
+   Needs a Switch save from the reporter.
+3. **#74 (ROG Ally, 14 FPS on the title and field):** not reproduced. Here title, field and
    battle run at 60 on the RX 560X, and on the Vega 8 iGPU the battle is the slowest (27 FPS),
    the opposite of the report. Asked the reporter for overlay screenshots, logs, power mode and
    RAM/UMA size. Note: a hidden or minimized window here throttles vsync to ~20 FPS (Wayland),
    so measure with `VW_VSYNC=0` or a visible window.
-3. **#71 Switch saves:** not started.
-4. Review leftovers on #78 (judgement calls, not done): the language list lives in five places
-   (probe.c tables, `vw_graphics.h`, overlay labels, `game_profiles.py` slots, `mods.py`
-   `SLOT_OF_LANGUAGE`); `english_text` is duplicated in `launcher/vw_launcher.py`; the
-   launcher's `--export-text` exports the Chinese archive for the new languages; tutorial
-   pictures stay the PS4 dump's in the Switch languages; three system messages name the Switch.
+4. Review leftovers: `english_text` is shared now (the launcher uses `mods.english_text`).
+   `--export-text` exporting the Chinese archive is right: JSON translations are read in Chinese
+   mode. Still open: the language list lives in five places (probe.c tables, `vw_graphics.h`,
+   overlay labels, `game_profiles.py` slots, `mods.py` `SLOT_OF_LANGUAGE`); Switch languages use
+   the PS4 dump's tutorial pictures; three system messages name the Switch.
 
 ## Driving the game unattended (Linux)
 
