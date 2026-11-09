@@ -260,6 +260,12 @@ def language_files(folder, slots):
     return [(folder.name, p, p.name) for p in sorted(found)]
 
 
+# The text language the game starts with (build_overlay: 'auto' becomes 'english' with the fan
+# English patch); main() prints it after the folder for run.py.
+TEXT_LANGUAGE = 'auto'
+
+ENGLISH_PATCH = 'the English patch'  # the label of its archive among the language sources
+
 # vw.ini text_language keys (gpu/shim/vw_graphics.h) -> the archive the game opens for them.
 SLOT_OF_LANGUAGE = {'english': 'Unicorn_US.CPK', 'french': 'Unicorn_FR.CPK', 'spanish': 'Unicorn_ES.CPK',
                     'german': 'Unicorn_DE.CPK', 'italian': 'Unicorn_IT.CPK'}
@@ -281,7 +287,8 @@ def write_slots(overlay, merge, sources):
     Unicorn_US/FR/ES/DE/IT.CPK for text languages 1-5, which the Asia dump lacks), each from
     the archives for it in `sources` ((label, path, slot) in order: a later file wins),
     over the game's own archive when it has one. Names ending in merge['skip'] (Switch
-    pictures) are left out: the game then shows those of Unicorn.CPK."""
+    pictures) are left out, except from the English patch (PS4 pictures): the game then shows
+    those of Unicorn.CPK."""
     by_slot = {}
     for label, path, slot in sources:
         by_slot.setdefault(slot.casefold(), []).append((label, path))
@@ -295,10 +302,11 @@ def write_slots(overlay, merge, sources):
             base = cpk.Archive(link_target(destination))
             files = {name.casefold(): (name, base, name) for name in base.files}
             remove_link(destination)
-        for _, path in parts:
+        for label, path in parts:
             archive = cpk.Archive(path)
             for name in archive.files:
-                if name.casefold().endswith(tuple(merge.get('skip', ()))):
+                # The patch's own pictures are PS4 ones (the English tutorial pictures).
+                if label != ENGLISH_PATCH and name.casefold().endswith(tuple(merge.get('skip', ()))):
                     skipped += 1
                     continue
                 files[name.casefold()] = (files.get(name.casefold(), (name,))[0], archive, name)
@@ -319,9 +327,10 @@ def build_overlay(game, out, mods, languages=None, text_language=None):
     """The game folder as the game sees it: `game` itself, or a view (links) with the mods'
     files and the language archives (`languages`: a folder of Switch Unicorn_XX.CPK files).
     Only the archive of `text_language` (a vw.ini key) is written, since a view makes the start
-    prepare the game image again. For 'english' without a Unicorn_US.CPK, the fan English
-    patch's archive (merge['english_from'], in the game or a mod) becomes it: the game's English
-    mode then shows the patch's text with the Western fonts (chapter title cards, #49)."""
+    prepare the game image again. For 'english' or 'auto' without a Unicorn_US.CPK, the fan
+    English patch's archive (merge['english_from'], in a mod or the game) becomes it, and the
+    language English (TEXT_LANGUAGE): the game's English mode shows the patch's text with the
+    Western fonts (chapter title cards, #49)."""
     game = Path(game).resolve(strict=True)
     names = game_names(game)
     merge = archive_merge(game) or {}
@@ -358,15 +367,25 @@ def build_overlay(game, out, mods, languages=None, text_language=None):
             count += 1
         print(f'Mods: {name}: {count} files', file=sys.stderr)
     # Only the chosen language's slot: a view makes the start prepare the game image again.
-    wanted = SLOT_OF_LANGUAGE.get(text_language or '')
+    # 'auto' (the game's default) is English with the fan English patch: Chinese mode would show
+    # its text in the Chinese fonts, and chapter title cards as one box (#49).
+    global TEXT_LANGUAGE
+    TEXT_LANGUAGE = text_language or 'auto'
+    wanted = SLOT_OF_LANGUAGE.get(TEXT_LANGUAGE)
     slot_sources = [source for source in slot_sources if source[2].casefold() == (wanted or '').casefold()]
-    if wanted == 'Unicorn_US.CPK' and not slot_sources:
-        sources = [child(game, name) for name in merge.get('english_from', ())]
-        sources += [path for _, path in reversed(archives)
-                    if path.name.casefold() in {n.casefold() for n in merge.get('english_from', ())}]
+    # Translation mods (JSON sheets, a Switch archive merged into the Chinese ones) are read in
+    # Chinese mode: with one, Game Default stays there.
+    translation = bool(archives or loose)
+    if (TEXT_LANGUAGE == 'english' or (TEXT_LANGUAGE == 'auto' and not translation)) and not slot_sources:
+        english_from = {name.casefold() for name in merge.get('english_from', ())}
+        # A mod's Unicorn_TW/CN.CPK (the patch installed as a mod) replaces the game's.
+        sources = [source for relative, source in reversed(replacements)
+                   if len(relative.parts) == 1 and relative.name.casefold() in english_from]
+        sources += [child(game, name) for name in merge.get('english_from', ())]
         for path in sources:
             if path.is_file() and english_text(path):
-                slot_sources.append(('the English patch', path, wanted))
+                slot_sources.append((ENGLISH_PATCH, path, 'Unicorn_US.CPK'))
+                TEXT_LANGUAGE = 'english'
                 break
     if not replacements and not archives and not loose and not slot_sources:
         return game
@@ -431,6 +450,7 @@ def main():
             for name in selected(args.mods_dir, args.config, names):
                 layers.append((name, args.mods_dir / name))
     print(build_overlay(args.game, args.out, layers, args.languages_dir, args.text_language))
+    print(TEXT_LANGUAGE)
 
 
 if __name__ == '__main__':

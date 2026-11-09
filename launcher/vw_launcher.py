@@ -62,8 +62,9 @@ GAMES = {
                     'English text (a fan translation). Voices: Japanese or English, in the game\'s '
                     'Voice Language option.',
                     'Leave Text Language in the game\'s options on Game Default. Japanese there shows '
-                    'the Japanese text; Chinese shows English (Simplified Chinese with the patch\'s '
-                    'second release: Chinese).',
+                    'the Japanese text. The port runs the patch\'s text in the game\'s own English '
+                    'mode (Western fonts, the game\'s line breaks, chapter titles); Traditional '
+                    'Chinese in the in-game menu (Insert) > Text language brings back the old look.',
                     'With the patch\'s first release a few tutorial pictures show Japanese text; the '
                     'second release translates them.',
                 ),
@@ -146,28 +147,15 @@ def check_game(game_info, folder):
 
 def english_text(folder):
     """The Chinese text archives ('cn', 'tw') of a dump that hold English text: the fan English
-    patch puts its text there (version 1: the same file in both; later versions need not). Read
-    from MsgSheet/UcSysMsg.fms: mostly Latin letters, or mostly CJK (UTF-8 lead bytes E0-EF).
-    Names are matched without case, as the game does (dump_files)."""
-    import cpk
+    patch puts its text there (version 1: the same file in both; later versions need not).
+    Judged by mods.english_text; names are matched without case, as the game does (dump_files)."""
+    from mods import english_text as latin
     try:
         files = {name: source for name, (source, _) in dump_files(folder).items()}
     except OSError:
         return set()
-    found = set()
-    for key in ('cn', 'tw'):
-        path = files.get(f'unicorn_{key}.cpk'.casefold())
-        if not path:
-            continue
-        try:
-            text = cpk.Archive(path).extract('MsgSheet/UcSysMsg.fms')
-        except (OSError, ValueError, KeyError):
-            continue
-        latin = sum(text.count(c) for c in b'etaoinsrhl')
-        cjk = sum(1 for b in text if 0xe0 <= b <= 0xef)
-        if latin > cjk:
-            found.add(key)
-    return found
+    return {key for key in ('cn', 'tw')
+            if (path := files.get(f'unicorn_{key}.cpk'.casefold())) and latin(path)}
 
 
 def detect_dump(folder):
@@ -844,8 +832,6 @@ def main(key):
             sys.exit(0)
         folder, dump, language = chosen
         settings['source_dir'] = folder
-        if dump == 'english' and language == 'auto' and english_text(folder) == {'cn'}:
-            language = 'simplified_chinese'  # the game binds Unicorn_TW.CPK by default
         if dump:
             import graphics_options
             settings.update(dump=dump, text_language=language)
@@ -859,6 +845,16 @@ def main(key):
         settings['game_dir'] = folder
         save_settings(data, settings)
 
+    if not settings.get('english_mode'):  # once, from the versions before Game Default was English
+        if settings.get('dump') == 'english' and settings.get('text_language') == 'simplified_chinese' \
+                and english_text(folder) == {'cn'}:
+            # Setup chose Simplified Chinese for a patch with its English in Unicorn_CN.CPK only,
+            # to show it at all; Game Default now runs it in the game's English mode (#49).
+            import graphics_options
+            graphics_options.write_keys(data / 'vw.ini', {'text_language': 'auto'})
+            settings.update(text_language='auto')
+        settings['english_mode'] = 1
+        save_settings(data, settings)
     check_for_update(game_info, data, settings)
     os.environ.update(VW_GAME_DIR=folder, VW_DATA_DIR=str(data), VW_CONFIG=str(data / 'vw.ini'))
     if FROZEN:

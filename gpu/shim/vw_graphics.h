@@ -49,8 +49,8 @@ inline Size WindowedSize(int resolution, int aspect_w, int aspect_h, int usable_
 }
 
 /// Text languages (the probe's text language patch, src/probe.c). "auto" leaves the game's
-/// choice: Traditional Chinese for the English system language the port reports, English with the
-/// English patch. Korean needs Unicorn_KO.CPK, which the Asia version does not ship. English,
+/// choice, Traditional Chinese for the English system language the port reports; with the fan
+/// English patch it is English (scripts/mods.py runs the patch's text in the English mode). Korean needs Unicorn_KO.CPK, which the Asia version does not ship. English,
 /// French, Spanish, German and Italian are the game's own Western languages: they need the
 /// Switch version's Unicorn_US/FR/ES/DE/IT.CPK in data/languages (scripts/mods.py). New keys go
 /// at the end: vw.ini stores the key, the menu the index.

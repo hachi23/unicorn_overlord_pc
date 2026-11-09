@@ -152,16 +152,37 @@ class ModTests(unittest.TestCase):
         english = fms.build(['Please wait. Saving the game in progress.'], template)
         self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcSysMsg.fms': chinese})
         self.archive(self.game / 'Unicorn_CN.CPK', {'MsgSheet/UcSysMsg.fms': english, 'GUI/Interface.mbs': b'ui',
+                                                   'Help/Help_00.ftx': b'ps4 picture',
                                                    'MsgSheet/UcScriptMsgConv.fms': b'one\ntwo',
                                                    'MsgSheet/UcScriptMsgConv_original.fms': b'one two'})
         with mock.patch.object(mods, 'archive_merge', return_value=merge):
             result = mods.build_overlay(self.game, self.root / 'out', [], None, 'english')
             other = mods.build_overlay(self.game, self.root / 'out', [], None, 'traditional_chinese')
+            self.assertEqual(mods.TEXT_LANGUAGE, 'traditional_chinese')
+            default = mods.build_overlay(self.game, self.root / 'out', [], None, 'auto')
+            self.assertEqual(mods.TEXT_LANGUAGE, 'english')  # Game Default is English with the patch
         us = mods.cpk.Archive(result / 'Unicorn_US.CPK')
         self.assertEqual(us.read('MsgSheet/UcSysMsg.fms'), english)
         self.assertEqual(us.read('GUI/Interface.mbs'), b'ui')
+        self.assertEqual(us.read('Help/Help_00.ftx'), b'ps4 picture')  # the patch's pictures are PS4 ones
         self.assertEqual(us.read('MsgSheet/UcScriptMsgConv.fms'), b'one two')  # the game breaks the lines
-        self.assertEqual(other, self.game.resolve())  # no view (and no new preparation) otherwise
+        self.assertEqual(other, self.game.resolve())  # no view otherwise
+        self.assertEqual(mods.cpk.Archive(default / 'Unicorn_US.CPK').read('MsgSheet/UcSysMsg.fms'), english)
+        # A translation mod is read in Chinese mode: Game Default stays there.
+        (self.moddir / 'Portuguese').mkdir(parents=True)
+        self.archive(self.moddir / 'Portuguese' / 'Unicorn_US.CPK', {'MsgSheet/UcSysMsg.fms': english})
+        with mock.patch.object(mods, 'archive_merge', return_value={**merge, 'archives': ('Unicorn_US.CPK',), 'into': ('Unicorn_TW.CPK',)}):
+            translated = mods.build_overlay(self.game, self.root / 'out', [('Portuguese', self.moddir / 'Portuguese')], None, 'auto')
+        self.assertEqual(mods.TEXT_LANGUAGE, 'auto')
+        self.assertFalse((translated / 'Unicorn_US.CPK').exists())
+        # The patch installed as a mod over the official (Chinese) dump.
+        (self.moddir / 'Patch').mkdir()
+        newer = fms.build(['Please wait. The game is being saved.'], template)
+        self.archive(self.moddir / 'Patch' / 'Unicorn_TW.CPK', {'MsgSheet/UcSysMsg.fms': newer})
+        with mock.patch.object(mods, 'archive_merge', return_value=merge):
+            patched = mods.build_overlay(self.game, self.root / 'out', [('Patch', self.moddir / 'Patch')], None, 'auto')
+        self.assertEqual(mods.TEXT_LANGUAGE, 'english')
+        self.assertEqual(mods.cpk.Archive(patched / 'Unicorn_US.CPK').read('MsgSheet/UcSysMsg.fms'), newer)  # the mod wins
         self.assertTrue(mods.english_text(self.game / 'Unicorn_CN.CPK'))
         self.assertFalse(mods.english_text(self.game / 'Unicorn_TW.CPK'))
 
@@ -235,7 +256,7 @@ class ModTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(ROOT / 'scripts/mods.py'), str(self.game),
                 '--out', str(self.root / 'out'), '--mods-dir', str(self.moddir), '--enabled', enabled],
                 capture_output=True, text=True, check=True)
-            self.assertEqual((Path(result.stdout.strip()) / 'game_data/data/a.wad').read_bytes(), expected)
+            self.assertEqual((Path(result.stdout.splitlines()[0]) / 'game_data/data/a.wad').read_bytes(), expected)
 
     def test_app0_wrapped_mod_discovered(self):
         self.moddir.mkdir()

@@ -263,14 +263,18 @@ def main():
         languages.mkdir(parents=True, exist_ok=True)  # where Switch language archives go
     except OSError:
         pass
-    game = Path(run_script('mods.py', game, '--out', out,
+    folder, language = run_script('mods.py', game, '--out', out,
                            '--mods-dir', env.get('VW_MODS_DIR', data / 'mods'),
                            '--config', env.get('VW_MODS_CONFIG', data / 'mods.json'),
                            '--enabled', env.get('VW_MODS_ENABLED', '1'),
                            '--languages-dir', languages,
                            '--text-language', env.get('VW_TEXT_LANGUAGE') or
                            graphics_options.read_ini(env['VW_CONFIG']).get('text_language', ''),
-                           capture=True).strip())
+                           capture=True).strip().splitlines()[-2:]
+    game = Path(folder)
+    if language == 'english' and not env.get('VW_TEXT_LANGUAGE'):
+        env['VW_TEXT_LANGUAGE'] = language  # Game Default with the English patch (mods.py)
+        derived.append('VW_TEXT_LANGUAGE')
     mod_view = game if game.resolve() != original_game else None
     try:
         sku = env.get('VW_CONTENT_SKU', 'full')
