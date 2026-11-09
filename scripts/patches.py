@@ -199,6 +199,31 @@ def write_patches(out, writes):
     (out/'patches.bin').write_bytes(blob)
 
 
+def glyph_writes(a):
+    """Glyph table writes for the Switch fonts in another order that mods.py converted
+    (scripts/glyphs.py); they apply whatever the game's patch profile."""
+    from mods import SWITCH_FONTS
+    folder=Path(a.game_dir)/SWITCH_FONTS
+    if not folder.is_dir(): return []
+    import glyphs, hashlib
+    elf=(a.out/'eboot.elf').read_bytes()
+    fonts={p.stem:p.read_bytes() for p in sorted(folder.glob('*.ftx'))}
+    key=hashlib.sha256(elf+b''.join(name.encode()+data for name,data in fonts.items())).hexdigest()
+    cache=a.out/'glyph_tables.json'  # measuring the glyphs takes seconds
+    try:
+        saved=json.loads(cache.read_text())
+        if saved['key']!=key: raise ValueError
+        writes,notes=[(offset,bytes.fromhex(data)) for offset,data in saved['writes']],saved['notes']
+    except (OSError,ValueError,KeyError,TypeError):
+        writes,notes=glyphs.writes(elf,fonts)
+        try:
+            cache.write_text(json.dumps({'key':key,'notes':notes,'writes':[(o,d.hex()) for o,d in writes]}))
+        except OSError:
+            pass
+    if notes: print(f'Patches: glyph tables for {", ".join(notes)}')
+    return writes
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--patches-dir',type=Path,help='third-party patch XML files (shadPS4 format)')
@@ -210,7 +235,7 @@ def main():
     title=game_title_id(a.game_dir)
     profile=game_profile(title)
     if not profile:
-        write_patches(a.out,[])
+        write_patches(a.out,glyph_writes(a))
         print(f'Patches: no patch profile for {title}: none applied')
         return
     ids,xml,needed,_sha=profile
@@ -218,11 +243,11 @@ def main():
     # corrupt code, so such a game runs unpatched.
     version=game_app_version(a.game_dir)
     if version!=needed and not os.environ.get('VW_FORCE_PATCHES'):
-        write_patches(a.out,[])
+        write_patches(a.out,glyph_writes(a))
         print(f'Patches: game version {version}, {xml.name} is for {needed}: none applied')
         return
     if not eboot_matches(a.game_dir,profile) and not os.environ.get('VW_FORCE_PATCHES'):
-        write_patches(a.out,[])
+        write_patches(a.out,glyph_writes(a))
         print(f'Patches: eboot.bin is not the build {xml.name} was checked against: none applied')
         return
     names=selected_patches(xml,needed,a.extra,os.environ.get('VW_PATCHES_ONLY')=='1')
@@ -232,7 +257,7 @@ def main():
         # After the built-in ones: an external patch of the same bytes wins.
         writes+=compile_external(external_selection(external_patches(a.patches_dir,needed,xml,ids),
                                                     a.patches_config),segments)
-    write_patches(a.out,writes)
+    write_patches(a.out,writes+glyph_writes(a))
     print(f'Patches: {title}; {len(writes)} writes from {names or "none"}')
 
 

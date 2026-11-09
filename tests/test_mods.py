@@ -143,6 +143,20 @@ class ModTests(unittest.TestCase):
         self.assertEqual(none, self.game.resolve())
         self.assertEqual(chinese, self.game.resolve())  # no view, so no new preparation at start
 
+    def test_converted_textures_are_kept_for_the_next_start(self):
+        cache = self.root / 'switch_textures'
+        calls = []
+        with mock.patch.object(mods.Pictures, '_convert', staticmethod(
+                lambda stored, template: calls.append(stored) or stored.upper())):
+            first = mods.Pictures(self.game, {}, cache)
+            self.assertEqual(first._cached(b'font', b'template'), b'FONT')
+            self.assertEqual(first._cached(b'old', None), b'OLD')
+            again = mods.Pictures(self.game, {}, cache)  # the next start: only the font
+            self.assertEqual(again._cached(b'font', b'template'), b'FONT')
+            again.prune()
+        self.assertEqual(calls, [b'font', b'old'])
+        self.assertEqual(len(list(cache.iterdir())), 1)
+
     def test_older_switch_sheets_get_the_games_entry_numbers(self):
         import fms
         def sheet(strings):
