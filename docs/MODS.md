@@ -120,6 +120,14 @@ mod.
 
 - The fonts are the game's: a character they lack shows as a box. The dialogue and menu fonts
   have the Latin accented letters (checked with Portuguese); other scripts are untested.
+- A Switch translation archive that brings its own fonts (`Font_4K/*.ftx`) gets them converted
+  to the PS4 format, in the text language's archive (`Unicorn_US.CPK` in `mods/<name>/` for
+  English). The Russian Switch translation (#84) draws Cyrillic in the place of the Latin-1
+  letters (its text is Windows-1251): when the converted AlbertusNova and Congenial fonts are in
+  that order, the start points the game's glyph tables at them (`scripts/glyphs.py`; the log
+  shows `Patches: glyph tables for ...`). The first start converts for about 40 seconds; later
+  starts use the copies in `out/switch_textures/`. The title menu font is not one of the
+  translation's, so its menu stays in the Latin letters it chose, as on the Switch.
 - Text longer than the original may run past its box.
 - With the text language `japanese` or `korean` neither archive is read, so the translation has
   no effect.
