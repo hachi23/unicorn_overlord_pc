@@ -86,7 +86,9 @@ mention the Nintendo Switch.
 
 **The file from the 1.05 update is best.** The file from the Switch base game (1.0.0) works
 too, but it lacks the text of the options and messages added in later updates. Those few lines
-show in the game's own language instead (English with the English patch). The log then says:
+show in the game's own language instead: English with the English patch, and **blank** with the
+official Chinese dump (its letters are not in the Western fonts). The Italian 1.0.0 file also has
+a typo of its own in the auto-advance time ("% lf sec"). The log then says:
 
 ```text
 Languages: Unicorn_FR.CPK: 5 text sheets fitted to this version's entries (an older Switch archive: only its text is used): ...
