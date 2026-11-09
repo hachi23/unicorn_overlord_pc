@@ -2,6 +2,24 @@
 
 Start here. The sections below this one are older (2026-10-20 and before) and kept for history.
 
+## What happened on 2026-11-09, evening (branch `claude/enhancements`)
+
+- **#74 iGPU:** render target clears that the game does with a compute fill are now image clears
+  (`ExecuteFillShaderHLE`, vk_shader_hle.cpp; toggle 1 << 53). Vega 8 battle map 25.8 -> 32.5
+  FPS native, 37.6 -> 46.2 FPS at 720p; RX 560X unchanged at 60. Details and what is left
+  (the game's own 127-sample blur at a fixed 960x540) in [parallel_gpu.md](parallel_gpu.md).
+  Profile with `VW_GPU_PROFILE=1`; pick the iGPU with
+  `MESA_VK_DEVICE_SELECT=1002:15dd MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE=1`.
+- **#50 keyboard prompts:** F1 shows a table of which key is which pad button (built from the
+  current bindings), and an 8-second hint says so at the first key press of a session.
+- **Language list:** `game_profiles.py` `slots` is the one Python list; `tests/test_languages.py`
+  checks probe.c's tables and `vw_graphics.h` against it.
+- **#51 Switch mods: dropped (owner's call).** For the record: every Unicorn Overlord mod on
+  GameBanana is an `exefs/main.pchtxt` against the Switch 1.05 executable (build ID
+  C841FFE2...); none replaces data files. The big ones patch data tables in the executable,
+  which a prototype mapped to the PS4 eboot for about 80% of the writes.
+- **#71:** the save layouts match up to save+0x1FB880 ([SWITCH_SAVES.md](SWITCH_SAVES.md)).
+
 ## What happened on 2026-11-08/09
 
 Merged into `main`: #75 (windowed mode opens at the render size and fits the screen, #70), #76

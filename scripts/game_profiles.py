@@ -28,7 +28,10 @@ PROFILES = {
             # The game's own archives for English, French, Spanish, German and Italian text
             # (text languages 1-5, src/probe.c), which the Asia dump lacks: written from the
             # Switch archives of that name in data/languages or a mod (mods.write_slots).
-            'slots': ('Unicorn_US.CPK', 'Unicorn_FR.CPK', 'Unicorn_ES.CPK', 'Unicorn_DE.CPK', 'Unicorn_IT.CPK'),
+            # vw.ini text_language key -> archive. The one list of these languages in Python;
+            # tests/test_languages.py checks the probe's and the menu's lists against it.
+            'slots': {'english': 'Unicorn_US.CPK', 'french': 'Unicorn_FR.CPK', 'spanish': 'Unicorn_ES.CPK',
+                      'german': 'Unicorn_DE.CPK', 'italian': 'Unicorn_IT.CPK'},
             # The fan English patch's archives: the English slot without a Switch one.
             'english_from': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'),
             'skip': ('.ftx',),

@@ -234,11 +234,71 @@ static bool ExecuteCopyShaderHLE(const Shader::Info& info, const AmdGpu::Compute
     return true;
 }
 
+static constexpr u64 FILL_SHADER_HASH = 0x2ba388c6;
+
+// vw: Unicorn Overlord clears its render targets with a compute shader that stores one dword
+// (buffer 1's first) to dwords [0, n) of buffer 2, n = min(buffer 0's first dword, SGPR6). It
+// runs ~21 times per frame, writing ~175 MB at 1080p; each target cleared that way also had to
+// be uploaded again from the buffer (three 1080p uploads per frame). When the range is exactly
+// one RGBA8 color image, clearing the image gives the same texels (bytes in memory order, any
+// tiling: every texel is the same) without either. Vega 8 battle map: GPU 7.4 ms per frame less.
+static bool ExecuteFillShaderHLE(const Shader::Info& info, const AmdGpu::ComputeProgram& cs_program,
+                                 Rasterizer& rasterizer) {
+    if (VwToggle::Disabled(VwToggle::FillShaderClear) || info.buffers.size() != 3 ||
+        cs_program.num_thread_x.full != 64) {
+        return false;
+    }
+    const auto count_sharp = info.buffers[0].GetSharp(info);
+    const auto value_sharp = info.buffers[1].GetSharp(info);
+    const auto dst = info.buffers[2].GetSharp(info);
+    if (!count_sharp.base_address || !value_sharp.base_address || dst.GetStride() != 4) {
+        return false;
+    }
+    const u64 count = std::min<u64>({*reinterpret_cast<const u32*>(count_sharp.base_address),
+                                     cs_program.user_data[6], u64(cs_program.dim_x) * 64});
+    const u64 size = count * 4;
+    if (size == 0 || size > dst.GetSize()) {
+        return false;
+    }
+    // Exactly one image, starting at the range and as large: a clear of anything else (other
+    // images over the same memory, a partial range) is left to the shader.
+    auto& texture_cache = rasterizer.GetTextureCache();
+    VideoCore::Image* target = nullptr;
+    u32 overlapping = 0;
+    texture_cache.ForEachImageInRegion(dst.base_address, size,
+                                       [&](VideoCore::ImageId, VideoCore::Image& image) {
+                                           ++overlapping;
+                                           target = &image;
+                                       });
+    if (overlapping != 1 || target->info.guest_address != dst.base_address ||
+        target->info.guest_size != size ||
+        target->info.pixel_format != vk::Format::eR8G8B8A8Unorm ||
+        target->info.props.is_depth || target->info.resources.levels != 1 ||
+        target->info.resources.layers != 1 ||
+        (target->flags & VideoCore::ImageFlagBits::Aliased)) {
+        return false;
+    }
+    if (auto* profiler = GpuProfiler::Get()) {
+        profiler->Mark(0xF111ull, [] { return std::string{"fill shader HLE: image clear"}; });
+    }
+    const u32 value = *reinterpret_cast<const u32*>(value_sharp.base_address);
+    vk::ClearValue clear{};
+    for (u32 i = 0; i < 4; ++i) {
+        clear.color.float32[i] = float((value >> (8 * i)) & 0xFF) / 255.0f;
+    }
+    const VideoCore::SubresourceRange range = {.base = {.level = 0, .layer = 0},
+                                               .extent = target->info.resources};
+    rasterizer.GetRuntime().ClearImage(target, range, clear);
+    return true;
+}
+
 bool ExecuteShaderHLE(const Shader::Info& info, const AmdGpu::Regs& regs,
                       const AmdGpu::ComputeProgram& cs_program, Rasterizer& rasterizer) {
     switch (info.pgm_hash) {
     case COPY_SHADER_HASH:
         return ExecuteCopyShaderHLE(info, cs_program, rasterizer);
+    case FILL_SHADER_HASH:
+        return ExecuteFillShaderHLE(info, cs_program, rasterizer);
     default:
         return false;
     }

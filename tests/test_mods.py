@@ -113,7 +113,7 @@ class ModTests(unittest.TestCase):
 
     def test_switch_language_archives_become_the_games_western_archives(self):
         merge = {'archives': ('Unicorn_US.CPK', 'Unicorn_FR.CPK'), 'into': ('Unicorn_TW.CPK',),
-                 'slots': ('Unicorn_US.CPK', 'Unicorn_FR.CPK', 'Unicorn_DE.CPK'), 'skip': ('.ftx',)}
+                 'slots': {'english': 'Unicorn_US.CPK', 'french': 'Unicorn_FR.CPK', 'german': 'Unicorn_DE.CPK'}, 'skip': ('.ftx',)}
         self.archive(self.game / 'Unicorn_TW.CPK', {'MsgSheet/UcSysMsg.fms': b'chinese'})
         languages = self.root / 'languages'
         (languages / 'romfs').mkdir(parents=True)
@@ -145,7 +145,7 @@ class ModTests(unittest.TestCase):
 
     def test_english_patch_archive_becomes_the_english_archive_when_english_is_chosen(self):
         import fms
-        merge = {'slots': ('Unicorn_US.CPK',), 'english_from': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'skip': ('.ftx',)}
+        merge = {'slots': {'english': 'Unicorn_US.CPK'}, 'english_from': ('Unicorn_TW.CPK', 'Unicorn_CN.CPK'), 'skip': ('.ftx',)}
         template = fms.build([''], b'FMSB' + bytes(4) + (0x20).to_bytes(4, 'little') + bytes(8)
                              + (1).to_bytes(4, 'little') + (1).to_bytes(4, 'little') + bytes(4))
         chinese = fms.build(['\u8acb\u7a0d\u5019\u3002\u8acb\u7a0d\u5019\u3002'], template)

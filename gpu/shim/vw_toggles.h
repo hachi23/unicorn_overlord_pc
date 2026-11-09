@@ -57,6 +57,7 @@ enum : std::uint64_t {
     ChunkedPreparation = 1ull << 50,
     VertexInputMemo = 1ull << 51,
     VertexRing = 1ull << 52,
+    FillShaderClear = 1ull << 53,
     UpdateImageFastPath = 1u << 30,
 };
 inline bool Disabled(std::uint64_t bit) {

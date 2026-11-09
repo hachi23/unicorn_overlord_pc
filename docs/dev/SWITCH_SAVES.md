@@ -36,6 +36,21 @@ and the same version 0x1C50D5, then sets up its sub-structs at 0x10, **0x427E90*
 - How the Switch writes the file (the struct as it is, compressed, or with a Nintendo save
   header) is not known.
 
+## Narrowed down (2026-11-09, later)
+
+- The Switch save editor [turtle-insect/unicornoverlord](https://github.com/turtle-insect/unicornoverlord)
+  reads the Switch file as one raw buffer: no compression and no wrapper. Its offsets read
+  correctly on a PS4 save: money 0x20, fame 0x24, items 0xA0 (20 bytes each), characters
+  0x2AF40 (464 bytes each; all 14 of a PS4 save line up, with the count at 0x63984), units
+  0x10D89A (1720 each), bonds 0x1B5830 (1316 each).
+- The first block's init (PS4 0x51f590, Switch 0x2d5b84; offsets from save+0x10) places the
+  same sub-structs at the same offsets up to **0x1FB870**: 0x90, 0x13910, 0x139BC, 0x2AF30,
+  0x6397C, 0x9C3C8, 0xD4E14, 0x10D860, 0x137850, 0x161840, 0x18B830, 0x1B5820, 0x1EA330,
+  0x1FB870. The next one is 0x3EA080 on the PS4 and 0x3EC170 on the Switch: **the sub-struct at
+  save+0x1FB880 is 0x20F0 bytes larger on the Switch** (init PS4 0x511610, inlined; Switch
+  0x2c3be0). Everything before it can be copied as it is.
+- Still to find: where inside that sub-struct the 0x20F0 bytes are, and the other 0xC00.
+
 ## Next steps
 
 1. Get a Switch save (`UCSAVEFILE.DATA` or what the Switch has; the issue's reporter offered
