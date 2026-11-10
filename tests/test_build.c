@@ -13,6 +13,7 @@ int main(void) {
     assert(unicorn_address(0x2b590) == 0x2b710);   /* text lookup */
     assert(unicorn_address(0xd7c9f0) == 0xd7a930); /* Options rows table */
     assert(unicorn_address(0xaf3350) == 0xaf11a0); /* 9/16 */
+    assert(unicorn_address(0xaf26f0) == 0xaf0510); /* RENDERBUFFER heap size */
     assert(unicorn_address(0x1602ad8) == 0x1602ad8);
     assert(unicorn_address(0x500000) == 0);
     puts("build: ok");
