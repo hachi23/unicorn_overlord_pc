@@ -7,7 +7,10 @@
 namespace Shader::Backend::SPIRV {
 
 Id Decorate(EmitContext& ctx, IR::Inst* inst, Id op) {
-    ctx.Decorate(op, spv::Decoration::NoContraction);
+    // vw (#74): see Profile::relaxed_fragment_float.
+    if (!(ctx.profile.relaxed_fragment_float && ctx.hw_stage == HwStage::Fragment)) {
+        ctx.Decorate(op, spv::Decoration::NoContraction);
+    }
     return op;
 }
 

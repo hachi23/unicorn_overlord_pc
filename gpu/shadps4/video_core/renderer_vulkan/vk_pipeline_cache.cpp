@@ -384,6 +384,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .needs_unorm_fixup = instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp,
         .needs_clip_distance_emulation = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
         .supports_shader_stencil_export = instance_.IsShaderStencilExportSupported(),
+        // vw (#74): AMD's Windows driver only; VW_RELAXED_FLOAT=0/1 overrides.
+        .relaxed_fragment_float = [&] {
+            if (const char* env = std::getenv("VW_RELAXED_FLOAT")) {
+                return env[0] == '1';
+            }
+            return instance.GetDriverID() == vk::DriverId::eAmdProprietary;
+        }(),
     };
 
     auto [cache_result, cache] = instance.GetDevice().createPipelineCacheUnique({});

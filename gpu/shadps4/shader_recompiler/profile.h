@@ -54,6 +54,10 @@ struct Profile {
     bool needs_unorm_fixup{};
     bool needs_clip_distance_emulation{};
     bool supports_shader_stencil_export{};
+    // vw (#74): fragment shaders without NoContraction, denorm flush and signed zero/inf/nan
+    // preserve. AMD's Windows compiler turns its optimizations down for those: UO's 127-tap
+    // title/world map blur took 3.7 ms per frame on an RX 9070 XT with them and 0.48 without.
+    bool relaxed_fragment_float{};
 
     bool operator==(const Profile&) const = default;
 };
