@@ -140,6 +140,7 @@ Use the bug report template. The most useful report has:
 | `VW_GPU_LOG=trace\|debug\|info` | GPU library log level (default warning) |
 | `VW_PAD_RECORD` / `VW_PAD_REPLAY` | Record and replay input, for bugs that need a route to reach |
 | `VW_PAD_FILE` | Drive the pad from a file (scripted runs, `tools/press.sh`) |
+| `VW_RELAXED_FLOAT=0\|1` | Fragment shaders without strict float modes (default: on for AMD's Windows driver only, #74) |
 | `VW_FRAME_DUMP_TRIGGER=<file>` | Touch the file to dump the next frame as raw BGRA pixels to `VW_DUMP_DIR` (default `out/dump`) |
 | `tools/ab.sh` | A/B toggle in one run with FPS and per-draw stage timings |
 | `perf` | User-space profiling of `out/vwport` and `out/gpu/libvwgpu.so` |

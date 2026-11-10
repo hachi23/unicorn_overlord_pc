@@ -1,6 +1,35 @@
-# Handoff (2026-11-09)
+# Handoff (2026-11-10)
 
 Start here. The sections below this one are older (2026-10-20 and before) and kept for history.
+
+## #74 found (2026-11-10, branch `claude/issue-74-amd-float`)
+
+The title and world map run a 127-tap blur at 960x540 (`ps 8eb82c2a`, two draws a frame). On the
+RX 9070 XT with AMD's Windows driver it cost **3.7 ms per frame**; RADV runs it far faster
+relative to the GPU. Cause: every fragment shader declared `DenormFlushToZero 32` and
+`SignedZeroInfNanPreserve 32` and put `NoContraction` on every float op. AMD's Windows compiler
+then keeps its optimizations down. Shader-patch A/B on the title (60 s each):
+
+| Fragment shader | Blur ms/frame |
+| --- | --- |
+| as emitted | 3.70 |
+| without NoContraction | 3.69 |
+| without SignedZeroInfNanPreserve | 3.69 |
+| without DenormFlushToZero | 2.49 |
+| without both float modes | 0.48 |
+| GLSL round trip: no float modes, `precise` kept | 3.54 |
+
+So all three have to go. `Profile::relaxed_fragment_float` drops them in fragment shaders only,
+on `eAmdProprietary` only (`VW_RELAXED_FLOAT=0/1` overrides); vertex/geometry and compute keep
+the strict modes. The profile is part of the disk cache check, so old caches rebuild by
+themselves. Result on the 9070 XT: blur 3.68 -> 0.42 ms on the title and 3.67 -> 0.37 ms in the
+prologue battle; frame dumps of title, menu and battle look the same in both modes. The Ally
+(about 1/8 of this GPU) should gain far more. Not measured: the world map itself (the test save
+continues into a battle), and the Ally — needs the reporter.
+
+Windows test setup used: `tools/uo_drive.ps1` left its steps unrun here; a bash variant
+(background `py run.py`, timed writes to `VW_PAD_FILE` and the dump trigger) worked. Button
+presses need ~400 ms in the pad file.
 
 ## Next: #74 on the Windows PC (RX 9070 XT)
 

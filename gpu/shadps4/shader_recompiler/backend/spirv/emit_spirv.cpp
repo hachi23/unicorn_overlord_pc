@@ -629,9 +629,15 @@ void SetupInfNanPreserveMode(EmitContext& ctx, const Profile& profile,
 void SetupFloatMode(EmitContext& ctx, const Profile& profile, const RuntimeInfo& runtime_info,
                     Id main_func) {
     ctx.AddExtension("SPV_KHR_float_controls");
-    SetupDenormFlushMode(ctx, profile, runtime_info, main_func);
+    // vw (#74): see Profile::relaxed_fragment_float. Rounding modes stay (RTZ only when asked).
+    const bool relaxed = profile.relaxed_fragment_float && ctx.hw_stage == HwStage::Fragment;
+    if (!relaxed) {
+        SetupDenormFlushMode(ctx, profile, runtime_info, main_func);
+    }
     SetupRoundingMode(ctx, profile, runtime_info, main_func);
-    SetupInfNanPreserveMode(ctx, profile, runtime_info, main_func);
+    if (!relaxed) {
+        SetupInfNanPreserveMode(ctx, profile, runtime_info, main_func);
+    }
 }
 
 void PatchPhiNodes(const IR::Program& program, EmitContext& ctx) {
