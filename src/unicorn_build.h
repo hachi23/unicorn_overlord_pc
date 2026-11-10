@@ -27,6 +27,7 @@ static const struct { uint32_t start, end; int32_t shift; } unicorn_hk0105_range
     {0x940e39, 0x9458e8, -9616}, /* weather layer */
     {0xa27ad2, 0xa27bfe, -8848}, /* speech bubble text */
     {0xaf1f50, 0xaf1fe0, -8672}, /* rodata: full-screen fill corners */
+    {0xaf26f0, 0xaf26f8, -8672}, /* rodata: RENDERBUFFER heap size */
     {0xaf3164, 0xaf3390, -8624}, /* rodata: screen size floats, 9/16 */
     {0xd7c900, 0xd7cbec, -8384}, /* rodata: Options tables */
     {0x14fcd70, 0x14fcdf0, 0},   /* .data: slider table */

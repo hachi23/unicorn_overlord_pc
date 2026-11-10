@@ -51,6 +51,37 @@ static inline int unicorn_map_limit_signature_match(const unsigned char *image, 
     return wf == 2880.0f && hf == 1620.0f;
 }
 
+/* The RENDERBUFFER heap (FUN_0003cb60, the render targets' pool) is 768 MiB on the Pro path: a
+ * u64 in rodata that FUN_00503ec0 copies into the heap sizes (read only at 0x504006; 0x29f19c00
+ * replaces it on a base PS4). 3840x2160 peaks at 722 MiB of it. Wider sizes need more than
+ * their pixel count says (some targets follow the width alone): 4266x1800 (1800p at 21:9)
+ * peaked at 822 MiB and 5120x2160 (4K at 21:9) at 1135 MiB, so the next target's allocation
+ * returned null and FUN_00044a90 cleared it (#87). Measured peaks from 2132x900 to 7680x2160
+ * (title screen; the prologue battle at 5120x2160 stayed at the same peak) fit
+ * 44.75 w*h + 19.6 w*w (per million pixels) + 104 MiB within 40 MiB. */
+static const uint32_t unicorn_renderbuffer_size = 0xaf26f0;
+#define UNICORN_RENDERBUFFER_PRO UINT64_C(0x30000000)
+
+/* The heap size for width x height: the fitted peak plus a quarter, in 16 MiB steps, at least
+ * UNICORN_RENDERBUFFER_PRO. The heap's size is 32-bit: at most 3.75 GiB (render sizes reach
+ * 8640x2160, about 3 GiB). */
+static inline uint64_t unicorn_renderbuffer_bytes(uint32_t width, uint32_t height) {
+    const double w = width, h = height;
+    const double mib = (44.75 * w * h + 19.6 * w * w) / 1e6 + 104.0;
+    uint64_t bytes = ((uint64_t)(mib * 1.25) + 15) / 16 * 16 << 20;
+    if (bytes < UNICORN_RENDERBUFFER_PRO) bytes = UNICORN_RENDERBUFFER_PRO;
+    if (bytes > UINT64_C(0xf0000000)) bytes = UINT64_C(0xf0000000);
+    return bytes;
+}
+
+static inline int unicorn_renderbuffer_signature_match(const unsigned char *image, uint64_t size) {
+    const uint32_t at = unicorn_address(unicorn_renderbuffer_size);
+    uint64_t value;
+    if (!at || at + 8 > size) return 0;
+    memcpy(&value, image + at, 8);
+    return value == UNICORN_RENDERBUFFER_PRO;
+}
+
 /* Each operand follows the `mov ecx` opcode (0xb9) and holds 3840 or 2160. */
 static inline int unicorn_render_scale_signature_match(const unsigned char *image, uint64_t size) {
     for (unsigned i = 0; i < 3; ++i) {

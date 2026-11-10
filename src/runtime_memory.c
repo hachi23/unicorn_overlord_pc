@@ -24,17 +24,20 @@
 #include <unistd.h>
 #endif
 /* sceKernelGetDirectMemorySize on retail PS4: 5056 MiB. VW_DMEM_MB raises it (the resolution
- * patches above 1080p need about 4 GiB more; run.py sets it). */
+ * patches above 1080p need about 4 GiB more; run.py sets it), and so does
+ * runtime_memory_add_direct. */
+static uint64_t pool_extra_bytes;
 static uint64_t pool_size_bytes(void) {
     static uint64_t size;
     if (!size) {
         const char *env = getenv("VW_DMEM_MB");
         uint64_t mb = env ? strtoull(env, NULL, 10) : 0;
         if (mb < 5056 || mb > 16384) mb = 5056;
-        size = mb * 1024 * 1024;
+        size = mb * 1024 * 1024 + pool_extra_bytes;
     }
     return size;
 }
+void runtime_memory_add_direct(uint64_t bytes) { pool_extra_bytes += bytes; }
 #define POOL_SIZE pool_size_bytes()
 #define FLEXIBLE_SIZE (UINT64_C(448) * 1024 * 1024)
 #define PAGE UINT64_C(16384)

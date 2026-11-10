@@ -473,6 +473,7 @@ static void forget_render_scale_env(void) {
  * the patch expects the game stays native: the unpatched Pro path draws at 3840x2160, so 900p
  * picked on such an eboot ran at 4K. */
 static int render_scale_ready, map_limit_ready;
+static uint64_t renderbuffer_bytes; /* the RENDERBUFFER heap size when it grows, else 0 */
 static uint32_t render_width, render_height; /* the size prepare_unicorn_render_scale chose */
 static void prepare_unicorn_render_scale(const char *app0, uint64_t size) {
     uint32_t width, height;
@@ -489,6 +490,19 @@ static void prepare_unicorn_render_scale(const char *app0, uint64_t size) {
     render_width = width;
     render_height = height;
     render_scale_ready = 1;
+    /* A larger RENDERBUFFER heap, and the direct memory it comes from (the game already takes
+     * about 4.9 of the 5056 MiB). */
+    const uint64_t renderbuffer = unicorn_renderbuffer_bytes(width, height);
+    if (renderbuffer > UNICORN_RENDERBUFFER_PRO) {
+        if (unicorn_renderbuffer_signature_match(image, size)) {
+            renderbuffer_bytes = renderbuffer;
+            runtime_memory_add_direct(renderbuffer - UNICORN_RENDERBUFFER_PRO);
+        } else {
+            /* 16:9 at this height fits the game's heap (3840x2160 at most). */
+            width = render_width = (height * 16 / 9) & ~1u;
+            printf("Aspect ratio: unavailable (render target memory, code signature); the game renders at 16:9\n");
+        }
+    }
     map_limit_ready = unicorn_map_limit_signature_match(image, size);
     if (!map_limit_ready && (width > 2880 || height > 1620))
         printf("Battle map: unavailable (code signature); drawn at 2880x1620 at most\n");
@@ -528,6 +542,11 @@ static void install_unicorn_render_scale(void) {
         memcpy(image + unicorn_address(unicorn_map_width_float), &widthf, 4);
         memcpy(image + unicorn_address(unicorn_map_height_float), &heightf, 4);
         printf("Battle map: %ux%u (the game's Pro limit is 2880x1620)\n", width, height);
+    }
+    if (renderbuffer_bytes) {
+        memcpy(image + unicorn_address(unicorn_renderbuffer_size), &renderbuffer_bytes, 8);
+        printf("Render targets: %" PRIu64 " MiB (the game's Pro heap is %" PRIu64 " MiB)\n",
+               renderbuffer_bytes >> 20, UNICORN_RENDERBUFFER_PRO >> 20);
     }
     printf("Render scale: %ux%u (PS4 Pro path)\n", width, height);
 }

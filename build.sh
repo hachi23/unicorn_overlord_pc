@@ -138,6 +138,8 @@ if [[ ${1:-} == --test ]]; then
     out/ultrawide-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -Isrc tests/test_build.c -o out/build-test
     out/build-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -Isrc tests/test_render_targets.c -o out/render-targets-test
+    out/render-targets-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -Isrc tests/test_text_wrap.c -o out/text-wrap-test
     out/text-wrap-test
 fi
