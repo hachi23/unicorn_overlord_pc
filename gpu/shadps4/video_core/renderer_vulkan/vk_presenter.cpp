@@ -39,6 +39,11 @@
 #include <system_error>
 #include <vector>
 #include <vk_mem_alloc.h>
+#include <unordered_map>
+
+// vw: the native renderer (src/native_vk.c) hands over its image for a display buffer.
+extern "C" int native_present_image(uint64_t address, void** image, uint32_t* width,
+                                    uint32_t* height) __attribute__((weak));
 #ifdef MemoryBarrier
 #undef MemoryBarrier // vw: winnt.h macro (through fmt), clashes with vk::MemoryBarrier
 #endif
@@ -393,9 +398,17 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         std::printf("Frame dump %d: display buffer %#llx\n", frame_dump_index,
                     (unsigned long long)cpu_address);
     }
-    auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
-    const VideoCore::ImageId image_id = texture_cache.FindImage(desc);
-    texture_cache.UpdateImage(image_id);
+    // vw: the native renderer's image for this buffer, when it drew one.
+    void* native_image = nullptr;
+    u32 native_width = 0, native_height = 0;
+    const bool native = native_present_image &&
+                        native_present_image(cpu_address, &native_image, &native_width, &native_height);
+    VideoCore::ImageId image_id{};
+    if (!native) {
+        auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
+        image_id = texture_cache.FindImage(desc);
+        texture_cache.UpdateImage(image_id);
+    }
 
     Frame* frame = GetRenderFrame();
 
@@ -432,8 +445,32 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 
     vk::ImageView image_view{};
     vk::Extent2D image_size{};
-    auto& image = texture_cache.GetImage(image_id);
-    if (frame_dump) {
+    if (native) {
+        // One view per native image and format; the image is R8G8B8A8 with a mutable format.
+        static std::unordered_map<u64, vk::UniqueImageView> native_views;
+        const bool srgb = view_info.format == vk::Format::eR8G8B8A8Srgb ||
+                          view_info.format == vk::Format::eB8G8R8A8Srgb;
+        const vk::Format format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+        const u64 key = reinterpret_cast<u64>(native_image) ^ u64(srgb);
+        auto& view = native_views[key];
+        if (!view) {
+            view = instance.GetDevice()
+                       .createImageViewUnique(vk::ImageViewCreateInfo{
+                           .image = vk::Image{static_cast<VkImage>(native_image)},
+                           .viewType = vk::ImageViewType::e2D,
+                           .format = format,
+                           .components = {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
+                                          vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne},
+                           .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+                       })
+                       .value;
+        }
+        image_view = *view;
+        image_size = vk::Extent2D{native_width, native_height};
+    }
+    auto* image_pointer = native ? nullptr : &texture_cache.GetImage(image_id);
+    if (frame_dump && !native) {
+        auto& image = *image_pointer;
         runtime.Transit(&image, vk::ImageLayout::eTransferSrcOptimal,
                         vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead);
         runtime.FlushBarriers();
@@ -441,12 +478,15 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                 vk::ImageLayout::eTransferSrcOptimal, image.info.size.width,
                 image.info.size.height, "display", frame_dump_index);
     }
-    image_view = *image.FindView(view_info).image_view;
-    image_size = vk::Extent2D{image.info.size.width, image.info.size.height};
-    runtime.Transit(&image, vk::ImageLayout::eShaderReadOnlyOptimal,
-                    vk::PipelineStageFlagBits2::eFragmentShader,
-                    vk::AccessFlagBits2::eShaderRead);
-    runtime.FlushBarriers();
+    if (!native) {
+        auto& image = *image_pointer;
+        image_view = *image.FindView(view_info).image_view;
+        image_size = vk::Extent2D{image.info.size.width, image.info.size.height};
+        runtime.Transit(&image, vk::ImageLayout::eShaderReadOnlyOptimal,
+                        vk::PipelineStageFlagBits2::eFragmentShader,
+                        vk::AccessFlagBits2::eShaderRead);
+        runtime.FlushBarriers();
+    }
     expected_ratio = static_cast<float>(image_size.width) / static_cast<float>(image_size.height);
 
     // vw: FSR 1, RCAS and its strength come from the in-game menu, every frame.

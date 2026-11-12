@@ -355,6 +355,13 @@ void PerformanceTab() {
                   "text stay 16:9 in the middle. On a 16:9 screen it shows black bars above and below. "
                   "Experimental: not yet tested on an ultrawide monitor; reports are welcome (README, "
                   "Ultrawide).");
+        static const char* const renderer_labels[] = {"shadPS4 (compatible)", "Native (experimental)"};
+        ChoiceRow("Renderer", s.renderer, renderer_labels, nullptr, int(G::Renderers.size()),
+                  "Native draws the game's graphics directly with Vulkan instead of emulating the PS4 GPU: "
+                  "faster, especially on weak GPUs. Experimental: tested through chapter 1; if something "
+                  "looks wrong or is missing, switch back and report it with the log. Its first start "
+                  "converts the game's shaders (a few seconds). If the restart never reaches the game, the next "
+                  "start goes back to shadPS4.");
         CheckRow("Game reads GPU data without waiting", s.stale_readback,
                  "Big FPS gain. Switch it off if lighting or objects look wrong.");
         CheckRow("Deferred GPU readbacks", s.deferred_readback,
@@ -573,7 +580,7 @@ int RestartChanges() {
     const auto& s = VwSettings::Get();
     return (s.render_resolution != s.startup_render_resolution) + (s.aspect_ratio != s.startup_aspect_ratio) +
            (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback) +
-           (s.text_language != s.startup_text_language);
+           (s.text_language != s.startup_text_language) + (s.renderer != s.startup_renderer);
 }
 
 void Menu() {

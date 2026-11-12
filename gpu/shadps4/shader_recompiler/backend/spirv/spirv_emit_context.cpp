@@ -72,7 +72,7 @@ EmitContext::EmitContext(const Profile& profile_, const RuntimeInfo& runtime_inf
                          Bindings& binding_)
     : Sirit::Module(profile_.supported_spirv), info{info_}, runtime_info{runtime_info_},
       profile{profile_}, hw_stage{info.hw_stage}, sw_stage{info.sw_stage}, binding{binding_} {
-    if (info.uses_dma) {
+    if (info.uses_dma || profile.native_renderer) {
         SetMemoryModel(spv::AddressingModel::PhysicalStorageBuffer64, spv::MemoryModel::GLSL450);
     } else {
         SetMemoryModel(spv::AddressingModel::Logical, spv::MemoryModel::GLSL450);
@@ -81,6 +81,9 @@ EmitContext::EmitContext(const Profile& profile_, const RuntimeInfo& runtime_inf
 
     AddCapability(spv::Capability::Shader);
     DefineArithmeticTypes();
+    if (profile.native_renderer) {
+        DefineNative();
+    }
     DefineInterfaces();
     DefineSharedMemory();
     DefineBuffers();
@@ -309,6 +312,11 @@ void EmitContext::DefineWorkgroupIndex() {
 }
 
 void EmitContext::DefineInputs() {
+    if (profile.native_renderer && sw_stage == SwStage::Fragment) {
+        native_index_in = DefineInput(U32[1], Info::NativeLayout::IndexLocation);
+        Decorate(native_index_in, spv::Decoration::Flat);
+        Name(native_index_in, "native_record_in");
+    }
     if (info.uses_lane_id) {
         subgroup_local_invocation_id = DefineVariable(
             U32[1], spv::BuiltIn::SubgroupLocalInvocationId, spv::StorageClass::Input);
@@ -339,6 +347,15 @@ void EmitContext::DefineInputs() {
         for (const auto& attrib : fetch_shader->attributes) {
             ASSERT(attrib.semantic < IR::NumParams);
             const auto sharp = attrib.GetSharp(info);
+            if (profile.native_renderer) {
+                // Pulled from the record's stream in the prologue.
+                const Id id{DefineVariable(F32[4], std::nullopt, spv::StorageClass::Private)};
+                Name(id, fmt::format("vs_in_attr{}", attrib.semantic));
+                native_inputs[attrib.semantic] = id;
+                input_params[attrib.semantic] = {
+                    id, TypePointer(spv::StorageClass::Private, F32[1]), F32[1], 4, false};
+                continue;
+            }
             const Id type{GetAttributeType(*this, sharp.GetNumberFmt())[4]};
             Id id{DefineInput(type, attrib.semantic)};
             if (attrib.GetStepRate() != Gcn::VertexAttribute::InstanceIdType::None) {
@@ -615,6 +632,11 @@ void EmitContext::DefineVertexBlock() {
 }
 
 void EmitContext::DefineOutputs() {
+    if (profile.native_renderer && sw_stage == SwStage::Vertex) {
+        native_index_out = DefineOutput(U32[1], Info::NativeLayout::IndexLocation);
+        Decorate(native_index_out, spv::Decoration::Flat);
+        Name(native_index_out, "native_record_out");
+    }
     switch (sw_stage) {
     case SwStage::Vertex: {
         DefineVertexBlock();
@@ -636,8 +658,10 @@ void EmitContext::DefineOutputs() {
                     continue;
                 }
                 const u32 num_components = info.stores.NumComponents(param);
-                const Id id{
-                    DefineOutput(F32[num_components], i + (needs_clip_distance_emulation ? 1 : 0))};
+                const u32 location = profile.native_renderer
+                                         ? info.native.output_location[i]
+                                         : i + (needs_clip_distance_emulation ? 1 : 0);
+                const Id id{DefineOutput(F32[num_components], location)};
                 Name(id, fmt::format("out_attr{}", i));
                 output_params[i] =
                     GetAttributeInfo(AmdGpu::NumberFormat::Float, id, num_components, true);
@@ -761,6 +785,16 @@ void EmitContext::DefineOutputs() {
 }
 
 void EmitContext::DefinePushDataBlock() {
+    if (profile.native_renderer) {
+        const Id struct_type{Name(TypeStruct(U64), "NativePush")};
+        Decorate(struct_type, spv::Decoration::Block);
+        MemberName(struct_type, 0, "records");
+        MemberDecorate(struct_type, 0, spv::Decoration::Offset, 0U);
+        native_push = DefineVar(struct_type, spv::StorageClass::PushConstant);
+        Name(native_push, "native_push");
+        interfaces.push_back(native_push);
+        return;
+    }
     // Create push constants block for instance steps rates
     const Id struct_type{Name(TypeStruct(F32[1], F32[1], F32[1], F32[1], U32[4], U32[4], U32[4],
                                          U32[4], U32[4], U32[4], U32[2]),
@@ -849,6 +883,52 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
 };
 
 void EmitContext::DefineBuffers() {
+    if (profile.native_renderer) {
+        // Read-only constant blocks through the record's addresses. The clip planes buffer
+        // every vertex shader declares is unused without user clip planes.
+        for (const auto& desc : info.buffers) {
+            auto& spv_buffer = buffers.emplace_back(binding.buffer++, desc.buffer_type);
+            if (desc.buffer_type == BufferType::ClipPlanes) {
+                continue;
+            }
+            const s32 block = info.native.buffer_block[buffers.size() - 1];
+            if (desc.buffer_type != BufferType::Guest || desc.is_written || block < 0) {
+                UNREACHABLE_MSG("Native renderer: buffer type {} written {} block {}",
+                                u32(desc.buffer_type), desc.is_written, block);
+            }
+            spv_buffer.native_block = block;
+            const auto define = [&](u32 elem_shift, Id data_type) -> BufferSpv {
+                const Id array_type{TypeRuntimeArray(data_type)};
+                const Id struct_type{TypeStruct(array_type)};
+                if (std::ranges::find(buf_type_ids, array_type.value, &Id::value) ==
+                    buf_type_ids.end()) {
+                    Decorate(array_type, spv::Decoration::ArrayStride, 1 << elem_shift);
+                    Decorate(struct_type, spv::Decoration::Block);
+                    MemberName(struct_type, 0, "data");
+                    MemberDecorate(struct_type, 0, spv::Decoration::Offset, 0U);
+                    buf_type_ids.push_back(array_type);
+                }
+                return {TypePointer(spv::StorageClass::PhysicalStorageBuffer, struct_type),
+                        TypePointer(spv::StorageClass::PhysicalStorageBuffer, data_type)};
+            };
+            if (True(desc.used_types & IR::Type::U64)) {
+                spv_buffer.Alias(PointerType::U64) = define(3, U64);
+            }
+            if (True(desc.used_types & IR::Type::U32)) {
+                spv_buffer.Alias(PointerType::U32) = define(2, U32[1]);
+            }
+            if (True(desc.used_types & IR::Type::F32)) {
+                spv_buffer.Alias(PointerType::F32) = define(2, F32[1]);
+            }
+            if (True(desc.used_types & IR::Type::U16)) {
+                spv_buffer.Alias(PointerType::U16) = define(1, U16);
+            }
+            if (True(desc.used_types & IR::Type::U8)) {
+                spv_buffer.Alias(PointerType::U8) = define(0, U8);
+            }
+        }
+        return;
+    }
     for (const auto& desc : info.buffers) {
         const auto buf_sharp = desc.GetSharp(info);
         // MTYPE class 3 marks guest buffers shared between invocations; shared
@@ -993,6 +1073,51 @@ Id ImageType(EmitContext& ctx, const ImageResource& desc, Id sampled_type) {
 }
 
 void EmitContext::DefineImagesAndSamplers() {
+    if (profile.native_renderer) {
+        // Bindless: each image indexes texture2D[] by its game slot's word in the record, and
+        // takes the sampler of the same slot.
+        for (u32 i = 0; i < info.images.size(); ++i) {
+            const auto& image_desc = info.images[i];
+            const auto sharp = image_desc.GetSharp(info);
+            const AmdGpu::NumberFormat nfmt = sharp.GetNumberFmt();
+            if (image_desc.is_written || AmdGpu::IsInteger(nfmt) ||
+                sharp.GetViewType(image_desc.is_array) != AmdGpu::ImageType::Color2D) {
+                UNREACHABLE_MSG("Native renderer: image {} not a sampled 2D float image", i);
+            }
+            const VectorIds& data_types = GetAttributeType(*this, nfmt);
+            const Id image_type{ImageType(*this, image_desc, data_types[1])};
+            images.push_back({
+                .data_types = &data_types,
+                .native_slot = info.native.image_slot[i],
+                .id = {},
+                .sampled_type = TypeSampledImage(image_type),
+                .image_type = image_type,
+                .view_type = AmdGpu::ImageType::Color2D,
+            });
+            if (!ValidId(native_textures)) {
+                native_textures = AddGlobalVariable(
+                    TypePointer(spv::StorageClass::UniformConstant, TypeRuntimeArray(image_type)),
+                    spv::StorageClass::UniformConstant);
+                Decorate(native_textures, spv::Decoration::DescriptorSet, 0U);
+                Decorate(native_textures, spv::Decoration::Binding, 0U);
+                Name(native_textures, "native_textures");
+                interfaces.push_back(native_textures);
+            }
+        }
+        if (!info.samplers.empty()) {
+            sampler_type = TypeSampler();
+            sampler_pointer_type = TypePointer(spv::StorageClass::UniformConstant, sampler_type);
+            native_samplers = AddGlobalVariable(
+                TypePointer(spv::StorageClass::UniformConstant, TypeRuntimeArray(sampler_type)),
+                spv::StorageClass::UniformConstant);
+            Decorate(native_samplers, spv::Decoration::DescriptorSet, 0U);
+            Decorate(native_samplers, spv::Decoration::Binding, 1U);
+            Name(native_samplers, "native_samplers");
+            interfaces.push_back(native_samplers);
+            samplers.resize(info.samplers.size());
+        }
+        return;
+    }
     for (const auto& image_desc : info.images) {
         const auto sharp = image_desc.GetSharp(info);
         const auto nfmt = sharp.GetNumberFmt();
@@ -1300,6 +1425,148 @@ void EmitContext::DefineFunctions() {
         LOG_DEBUG(Render_Recompiler, "Shader {:#x} uses dynamic ReadConst", info.pgm_hash);
         read_const_dynamic = DefineReadConst(true);
     }
+}
+
+
+// vw: native renderer mode.
+void EmitContext::DefineNative() {
+    AddCapability(spv::Capability::PhysicalStorageBufferAddresses);
+    AddCapability(spv::Capability::Int64);
+    AddCapability(spv::Capability::RuntimeDescriptorArray);
+    AddCapability(spv::Capability::GroupNonUniformBallot);
+    native_psb_u32 = TypePointer(spv::StorageClass::PhysicalStorageBuffer, U32[1]);
+    native_psb_u64 = TypePointer(spv::StorageClass::PhysicalStorageBuffer, U64);
+    native_psb_u32x4 = TypePointer(spv::StorageClass::PhysicalStorageBuffer, U32[4]);
+}
+
+void EmitContext::EmitNativePrologue() {
+    using Layout = Info::NativeLayout;
+    const Id records{OpLoad(U64, OpAccessChain(TypePointer(spv::StorageClass::PushConstant, U64),
+                                               native_push, u32_zero_value))};
+    Id index;
+    if (sw_stage == SwStage::Vertex) {
+        // The draw's firstInstance is its record's index (one instance per draw).
+        index = OpLoad(U32[1], instance_id);
+        OpStore(native_index_out, index);
+    } else {
+        index = OpLoad(U32[1], native_index_in);
+    }
+    // One draw is one record, and a wave never mixes draws: the index is uniform. Saying so
+    // turns every record, constant and descriptor access into a scalar one.
+    index = OpGroupNonUniformBroadcastFirst(U32[1], ConstU32(u32(spv::Scope::Subgroup)), index);
+    const Id record{OpIAdd(U64, records,
+                           OpIMul(U64, OpUConvert(U64, index), Constant(U64, u64(Layout::RecordSize))))};
+    const auto load = [&](Id type, Id pointer_type, u32 offset, u32 align) {
+        const Id address{OpIAdd(U64, record, Constant(U64, u64(offset)))};
+        return OpLoad(type, OpConvertUToPtr(pointer_type, address), spv::MemoryAccessMask::Aligned,
+                      align);
+    };
+    for (auto& buffer : buffers) {
+        if (buffer.native_block >= 0) {
+            buffer.native_address =
+                load(U64, native_psb_u64, Layout::BlockOffset + 8 * buffer.native_block, 8);
+        }
+    }
+    for (const auto& image : images) {
+        const s32 slot = image.native_slot;
+        if (slot >= 0 && !ValidId(native_slot_words[slot])) {
+            native_slot_words[slot] = load(U32[1], native_psb_u32, Layout::SlotOffset + 4 * slot, 4);
+        }
+    }
+    if (sw_stage == SwStage::Vertex) {
+        for (u32 i = 0; i < native_inputs.size(); ++i) {
+            if (ValidId(native_inputs[i])) {
+                PullNativeInput(i, record);
+            }
+        }
+    }
+}
+
+// Vertex input n from the record's stream n: address (x, y), stride (z), format (w: 1..4 that
+// many 32-bit floats, 5 four 8-bit unorm). Missing components read (0, 0, 0, 1).
+void EmitContext::PullNativeInput(u32 n, Id record) {
+    const Id stream_address{OpIAdd(U64, record,
+                                   Constant(U64, u64(Info::NativeLayout::StreamOffset + 16 * n)))};
+    const Id stream{OpLoad(U32[4], OpConvertUToPtr(native_psb_u32x4, stream_address),
+                           spv::MemoryAccessMask::Aligned, 16u)};
+    const Id base{OpBitcast(U64, OpCompositeConstruct(U32[2], OpCompositeExtract(U32[1], stream, 0u),
+                                                      OpCompositeExtract(U32[1], stream, 1u)))};
+    const Id stride{OpCompositeExtract(U32[1], stream, 2u)};
+    const Id format{OpCompositeExtract(U32[1], stream, 3u)};
+    const Id vertex{OpLoad(U32[1], vertex_index)};
+    const Id address{OpIAdd(U64, base, OpUConvert(U64, OpIMul(U32[1], vertex, stride)))};
+    const Id var{native_inputs[n]};
+    const Id zero{ConstF32(0.f)}, one{ConstF32(1.f)};
+    OpStore(var, ConstantComposite(F32[4], zero, zero, zero, one));
+    const auto word = [&](u32 k) {
+        const Id at{OpIAdd(U64, address, Constant(U64, u64(4 * k)))};
+        return OpLoad(U32[1], OpConvertUToPtr(native_psb_u32, at), spv::MemoryAccessMask::Aligned,
+                      4u);
+    };
+    const Id merge{OpLabel()};
+    std::array<Id, 5> cases;
+    std::array<Sirit::Literal, 5> literals;
+    for (u32 k = 0; k < 5; ++k) {
+        cases[k] = OpLabel();
+        literals[k] = k + 1;
+    }
+    OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
+    OpSwitch(format, merge, literals, cases);
+    for (u32 k = 0; k < 4; ++k) {
+        AddLabel(cases[k]);
+        std::array<Id, 4> c{zero, zero, zero, one};
+        for (u32 j = 0; j <= k; ++j) {
+            c[j] = OpBitcast(F32[1], word(j));
+        }
+        OpStore(var, OpCompositeConstruct(F32[4], c));
+        OpBranch(merge);
+    }
+    AddLabel(cases[4]);
+    OpStore(var, OpUnpackUnorm4x8(F32[4], word(0)));
+    OpBranch(merge);
+    AddLabel(merge);
+}
+
+Id EmitContext::LoadImage(u32 handle) {
+    const auto& texture = images[handle & 0xFFFF];
+    if (texture.native_slot < 0) {
+        return OpLoad(texture.image_type, texture.id);
+    }
+    const Id index{OpBitwiseAnd(U32[1], native_slot_words[texture.native_slot], ConstU32(0xfffffu))};
+    const Id pointer{OpAccessChain(TypePointer(spv::StorageClass::UniformConstant, texture.image_type),
+                                   native_textures, index)};
+    const Id image{OpLoad(texture.image_type, pointer)};
+    return image;
+}
+
+Id EmitContext::LoadSampler(u32 handle) {
+    const auto& texture = images[handle & 0xFFFF];
+    if (texture.native_slot < 0) {
+        return OpLoad(sampler_type, samplers[handle >> 16]);
+    }
+    const Id index{OpShiftRightLogical(U32[1], native_slot_words[texture.native_slot], ConstU32(20u))};
+    const Id pointer{OpAccessChain(sampler_pointer_type, native_samplers, index)};
+    const Id sampler{OpLoad(sampler_type, pointer)};
+    return sampler;
+}
+
+Id EmitContext::SampledImage(Id type, Id image, Id sampler) {
+    return OpSampledImage(type, image, sampler);
+}
+
+std::pair<Id, Id> EmitContext::BufferBase(const BufferDefinition& buffer, PointerType alias) {
+    const auto [id, pointer_type] = buffer.Alias(alias);
+    if (buffer.native_block < 0) {
+        return {id, pointer_type};
+    }
+    return {OpConvertUToPtr(id, buffer.native_address), pointer_type};
+}
+
+Id EmitContext::BufferLoad(const BufferDefinition& buffer, Id type, Id pointer, u32 align) {
+    if (buffer.native_block < 0) {
+        return OpLoad(type, pointer);
+    }
+    return OpLoad(type, pointer, spv::MemoryAccessMask::Aligned, align);
 }
 
 } // namespace Shader::Backend::SPIRV

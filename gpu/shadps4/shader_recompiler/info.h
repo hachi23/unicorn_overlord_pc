@@ -128,6 +128,18 @@ struct Info : InfoPersistent {
     CopyShaderData gs_copy_data;
     u32 uses_patches{};
 
+    /// vw: Profile::native_renderer. Each draw has a record in the native renderer's record buffer
+    /// (Record in src/native_vk.c): per game texture slot the bindless texture index (low 20 bits)
+    /// and sampler index (high 12); per stage and game constant slot the block's GPU address; per
+    /// vertex input its stream (address low, high, stride, format).
+    struct NativeLayout {
+        static constexpr u32 SlotOffset = 0, BlockOffset = 32, StreamOffset = 288, RecordSize = 544;
+        static constexpr u32 BlocksPerStage = 16, IndexLocation = 15;
+        std::array<s8, 32> buffer_block{};    ///< per buffers[i]: record block, -1 unused
+        std::array<s8, 32> image_slot{};      ///< per images[i]: game texture slot
+        std::array<u8, 32> output_location{}; ///< per VS parameter: output location
+    } native{};
+
     VAddr pgm_base;
     bool has_storage_images{};
     bool has_discard{};

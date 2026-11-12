@@ -51,6 +51,11 @@ class Rasterizer;
 
 class Presenter {
 public:
+    // vw: the native renderer (src/native_vk.c) shares this device.
+    const Instance& GetInstance() const {
+        return instance;
+    }
+
     Presenter(Frontend::WindowSDL& window, AmdGpu::Liverpool* liverpool);
     ~Presenter();
 

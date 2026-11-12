@@ -105,11 +105,13 @@ void runtime_file_unmount(const char *guest) {
     }
     pthread_mutex_unlock(&lock);
 }
-static char user_root[512]="user";
+static char user_root[512]="user", app_root[512]="";
 const char *runtime_file_user_dir(void) { return user_root; }
+const char *runtime_file_app_dir(void) { return app_root; }
 void runtime_file_configure(const char *app0,const char *user) {
     char path[600];
     snprintf(user_root,sizeof(user_root),"%s",user);
+    snprintf(app_root,sizeof(app_root),"%s",app0);
     runtime_file_mount("/app0",app0);
     runtime_file_mount("/hostapp",app0);
     const char *writable[]={"temp0","download0","data"};

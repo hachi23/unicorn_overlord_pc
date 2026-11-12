@@ -31,6 +31,8 @@
 #include "core/signals.h"
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
+#include "video_core/renderer_vulkan/vk_presenter.h"
+#include "video_core/renderer_vulkan/vk_scheduler.h"
 
 extern "C" {
 // runtime_memory.c
@@ -395,3 +397,18 @@ extern "C" int vwgpu_text_input_poll(char* out, uint64_t size) {
     }
     return state;
 }
+
+extern std::unique_ptr<Vulkan::Presenter> presenter;
+extern "C" int vwgpu_vulkan_handles(void** instance, void** physical, void** device, void** queue,
+                                    uint32_t* family) {
+    if (!presenter) return 0;
+    const Vulkan::Instance& vk = presenter->GetInstance();
+    *instance = static_cast<VkInstance>(vk.GetInstance());
+    *physical = static_cast<VkPhysicalDevice>(vk.GetPhysicalDevice());
+    *device = static_cast<VkDevice>(vk.GetDevice());
+    *queue = static_cast<VkQueue>(vk.GetGraphicsQueue());
+    *family = vk.GetGraphicsQueueFamilyIndex();
+    return 1;
+}
+extern "C" void vwgpu_queue_lock(void) { Vulkan::Scheduler::submit_mutex.lock(); }
+extern "C" void vwgpu_queue_unlock(void) { Vulkan::Scheduler::submit_mutex.unlock(); }

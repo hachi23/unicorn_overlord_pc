@@ -12,6 +12,7 @@
 #include "unicorn_ultrawide.h"
 #include "unicorn_button_icons.h"
 #include "unicorn_native_settings.h"
+#include "native_gfx.h"
 #include "gpu/vwgpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
@@ -1093,6 +1094,22 @@ int main(int argc, char **argv) {
     install_unicorn_cri_hook(app0, segments, ns);
     install_unicorn_bubble_text(app0, segments, ns);
     if (gpu_enabled) install_unicorn_native_settings(app0);
+    /* The native renderer (VW_NATIVE, src/native_gfx.h): v01.04 only for now. */
+    if (gpu_enabled) {
+        char renderer[32];
+        startup_setting("VW_NATIVE", "renderer", renderer, sizeof(renderer));
+        native_gfx_select(renderer);
+        if (native_gfx_mode() && !(unicorn_known_build(app0) && unicorn_build == UNICORN_V0104)) {
+            printf("Native: the native renderer needs game version 01.04; shadPS4 draws instead\n");
+            native_gfx_select("0");
+        }
+    }
+    if (native_gfx_mode()) {
+        const size_t stub_bytes = 16 * page_size;
+        unsigned char *stubs = allocate(stub_bytes);
+        native_gfx_install(image, stubs, stub_bytes);
+        protect(stubs, stub_bytes, 5);
+    }
     install_unicorn_text_language(app0);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));

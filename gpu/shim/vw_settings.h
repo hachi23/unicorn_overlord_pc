@@ -43,6 +43,8 @@ struct Values {
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> render_resolution{0};
     std::atomic<int> aspect_ratio{0};
+    /// Index into VwGraphics::Renderers; the probe reads renderer= itself.
+    std::atomic<int> renderer{0};
     std::atomic<bool> deferred_readback{true};
     std::atomic<bool> stale_readback{true};
     /// Index into VwGraphics::TextLanguages; the probe reads text_language= itself.
@@ -50,7 +52,7 @@ struct Values {
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
-    int startup_render_resolution = 0, startup_aspect_ratio = 0, startup_text_language = 0;
+    int startup_render_resolution = 0, startup_aspect_ratio = 0, startup_text_language = 0, startup_renderer = 0;
     bool startup_deferred_readback = true, startup_stale_readback = true;
 };
 

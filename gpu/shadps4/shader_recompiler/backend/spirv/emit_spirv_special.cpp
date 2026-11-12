@@ -9,6 +9,9 @@
 namespace Shader::Backend::SPIRV {
 
 void EmitPrologue(EmitContext& ctx) {
+    if (ctx.profile.native_renderer) {
+        ctx.EmitNativePrologue();
+    }
     if (ctx.hw_stage == HwStage::Fragment) {
         ctx.DefineAmdPerVertexAttribs();
     }

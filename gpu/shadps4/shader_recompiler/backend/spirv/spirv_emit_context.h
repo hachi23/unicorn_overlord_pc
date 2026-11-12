@@ -300,6 +300,7 @@ public:
 
     struct TextureDefinition {
         const VectorIds* data_types;
+        s32 native_slot = -1;
         Id id;
         Id sampled_type;
         Id image_type;
@@ -335,6 +336,8 @@ public:
     struct BufferDefinition {
         u32 binding;
         BufferType buffer_type;
+        s32 native_block = -1;  ///< vw: native mode: record block; alias ids are PSB struct pointer types
+        Id native_address{};    ///< vw: native mode: the block's address, loaded in the prologue
         std::array<Id, u32(PointerSize::NumClass)> offsets;
         std::array<BufferSpv, u32(PointerType::NumAlias)> aliases;
 
@@ -392,6 +395,21 @@ public:
     Id read_const{};
     Id read_const_dynamic{};
 
+    // vw: native renderer mode (Profile::native_renderer, Info::NativeLayout).
+    Id native_push{};            ///< push constant: the frame's record buffer address
+    Id native_index_in{};        ///< PS: the record index from the vertex stage
+    Id native_index_out{};       ///< VS: the record index for the pixel stage
+    Id native_textures{};        ///< bindless texture2D[] (set 0, binding 0)
+    Id native_samplers{};        ///< bindless sampler[] (set 0, binding 1)
+    Id native_psb_u32{}, native_psb_u64{}, native_psb_u32x4{};
+    std::array<Id, 32> native_inputs{};     ///< VS: Private vec4 per pulled vertex input
+    std::array<Id, 8> native_slot_words{};  ///< the record's word for each texture slot used
+    /// Emitted at the start of main: finds the draw's record and loads what the shader uses.
+    void EmitNativePrologue();
+    Id LoadImage(u32 handle);
+    Id LoadSampler(u32 handle);
+    Id SampledImage(Id type, Id image, Id sampler);
+
 private:
     void DefineArithmeticTypes();
     void DefineInterfaces();
@@ -403,6 +421,14 @@ private:
     void DefineImagesAndSamplers();
     void DefineSharedMemory();
     void DefineFunctions();
+    void DefineNative();
+    void PullNativeInput(u32 index, Id record);
+
+public:
+    std::pair<Id, Id> BufferBase(const BufferDefinition& buffer, PointerType alias);
+    Id BufferLoad(const BufferDefinition& buffer, Id type, Id pointer, u32 align);
+
+private:
 
     SpirvAttribute GetAttributeInfo(AmdGpu::NumberFormat fmt, Id id, u32 num_components,
                                     bool output, bool loaded = false, bool array = false);
