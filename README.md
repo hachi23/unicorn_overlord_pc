@@ -86,7 +86,8 @@ Settings are saved in `vw.ini`; **Restore Defaults** resets them too.
 > menu, change the resolution under **Performance**, then choose **Apply and restart**. If you
 > change it in the game's **System → Options → PC** section, close and relaunch the game.
 
-In game, **Insert** (R3+L2 on a controller) opens the port's overlay menu with every setting. It has
+In game, **Insert** (R3+L2 on a controller) opens the port's overlay menu with every setting, and a
+**Quit game** button at the bottom (the game has none of its own). It has
 four tabs:
 
 - **Image:** display mode, VSync, **Anime4K**, FSR 1 and RCAS sharpening. Anime4K (Fast or
@@ -212,6 +213,14 @@ in the port's menu (Insert) > Controls. The defaults:
 | Tab (Backspace: its right side) | touchpad |
 | Insert | the port's menu |
 | F1 | the key list |
+
+### Mouse
+
+On the battle map the mouse moves the game's cursor (the glove); the system pointer is hidden
+over the window there. Left click is Cross and right click is Circle, everywhere. Menus are
+still chosen with the keys or a controller: the game has no pointer in its menus. The click
+that brings the window to the front is not passed to the game. `VW_MOUSE=0` turns the cursor
+movement off. Works with v01.04 and the Hong Kong 1.05 package.
 
 ## Building
 

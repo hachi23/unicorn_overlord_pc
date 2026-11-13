@@ -48,6 +48,7 @@ VW_GAME_DIR=~/dumps/CUSA36381 bash tools/native/bench.sh 60 > /tmp/bench.log
 | `analysis/slots.py FRAME_DUMP HASH...` | For draws using a shader in a frame dump: the bound constant and texture slots |
 | `analysis/show.py`, `sumfn.py`, `fsum.py` | Filters over frame dumps and Ghidra output (research aids) |
 | `analysis/shaders.py`, `fam.py`, `stab.py`, `srefs.py` | The 2026-11-12 survey of the eboot's shader table and shader families (`UO_ELF` = `eboot_ghidra.elf`) |
+| `VW_RE_WATCH=<vtable>:<bytes>` | Not a script: run the game with it (Linux) and every 250 ms it prints which 4-byte fields of a live object of that class changed (`src/re_watch.h`). How the battle map cursor's position was found (`src/unicorn_mouse.h`) |
 | `ghidra/gh.sh Script.java out.txt [args]` | A Ghidra script, headless, on the project in `UO_GHIDRA_PROJECT` (`GHIDRA_HOME`, default `/opt/ghidra`) |
 | `ghidra/*.java` | Call trees, decompilation to C, the Gnmx survey and prologue checks used to find the hooks |
 

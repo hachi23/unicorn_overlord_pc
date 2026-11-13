@@ -318,6 +318,20 @@ void runtime_pad_spec(int keyboard, char *out, size_t size) {
 static void key_axis(uint8_t *axis, bool negative, bool positive) {
     if (negative || positive) *axis=(uint8_t)(128-(negative ? 128 : 0)+(positive ? 127 : 0));
 }
+/* Mouse buttons over the game window: left Cross, right Circle. The click that focuses the window
+ * is not passed on (held buttons wait for release after the window gains focus). */
+static uint32_t mouse_buttons(void) {
+    if (!SDL_WasInit(SDL_INIT_VIDEO)) return 0;
+    static int wait_release;
+    SDL_Window *w=SDL_GetMouseFocus();
+    const SDL_MouseButtonFlags held=SDL_GetMouseState(NULL,NULL);
+    if (!w || !(SDL_GetWindowFlags(w)&SDL_WINDOW_INPUT_FOCUS)) { wait_release=1; return 0; }
+    if (wait_release) { if (!held) wait_release=0; return 0; }
+    uint32_t b=0;
+    if (held&SDL_BUTTON_LMASK) b|=BTN_CROSS;
+    if (held&SDL_BUTTON_RMASK) b|=BTN_CIRCLE;
+    return b;
+}
 static void sample_host(PadData *d) {
     memset(d,0,sizeof(*d));
     d->left_x=d->left_y=d->right_x=d->right_y=128;
@@ -328,6 +342,7 @@ static void sample_host(PadData *d) {
     if (vwgpu_overlay_captures_input()) return; /* settings menu open: neutral input */
     const bool *k=SDL_WasInit(SDL_INIT_VIDEO) ? SDL_GetKeyboardState(NULL) : NULL;
     load_button_maps();
+    d->buttons|=mouse_buttons();
     if (g) {
         for (size_t i=0;i<pad_map.count;++i)
             if (SDL_GetGamepadButton(g,(SDL_GamepadButton)pad_map.entries[i].source)) d->buttons|=pad_map.entries[i].ps;
@@ -373,8 +388,11 @@ static void sample_host(PadData *d) {
  * tokens, re-read when it changes: button names (cross circle square triangle l1 r1 l2 r2 l3 r3
  * options touchpad touchpad_left touchpad_right up down left right) are held while listed;
  * touchpad defaults to a left-side click; lx= ly= rx= ry= (0..255) override
- * the sticks. An empty file releases everything. */
+ * the sticks; mouse=dx,dy moves the mouse by that many pixels once. An empty file releases
+ * everything. */
 static struct { uint32_t buttons; int stick[4]; int touch_side; } injected={0,{-1,-1,-1,-1},-1};
+static float injected_mouse[2];   /* mouse=dx,dy, pixels, taken once by runtime_mouse_take */
+static int nudge_x, nudge_y, nudge_reads;   /* runtime_mouse_nudge: left stick for a few reads */
 static int replay_armed;      /* 1 while a VW_PAD_REPLAY recording plays, 2 once it ended */
 static uint64_t replay_start; /* 0: (re)start at the next sample */
 static void read_inject(void) {
@@ -409,6 +427,8 @@ static void read_inject(void) {
         }
         for (size_t i=0;i<sizeof(ps_names)/sizeof(*ps_names);++i) if (!strcmp(token,ps_names[i].name)) injected.buttons|=ps_names[i].ps;
         for (int i=0;i<4;++i) if (!strncmp(token,sticks[i],3)) { int v=atoi(token+3); injected.stick[i]=v<0 ? 0 : v>255 ? 255 : v; }
+        float mx, my;
+        if (sscanf(token,"mouse=%f,%f",&mx,&my)==2) { injected_mouse[0]+=mx; injected_mouse[1]+=my; }
     }
     fclose(f);
     printf("Runtime: pad file: buttons 0x%x sticks %d %d %d %d\n",injected.buttons,
@@ -532,6 +552,10 @@ static void sample(PadData *d) {
     if (injected.buttons & BTN_R2) d->r2=255;
     uint8_t *axes[4]={&d->left_x,&d->left_y,&d->right_x,&d->right_y};
     for (int i=0;i<4;++i) if (injected.stick[i]>=0) *axes[i]=(uint8_t)injected.stick[i];
+    if (nudge_reads>0) {
+        --nudge_reads;
+        d->left_x=(uint8_t)(128+nudge_x); d->left_y=(uint8_t)(128+nudge_y);
+    }
     if (hold_after_capture) {
         if (d->buttons) d->buttons=0;
         else hold_after_capture=0;
@@ -611,3 +635,34 @@ static const RuntimeExport exports[]={
 };
 uintptr_t runtime_pad_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
 void runtime_pad_report(void) { printf("Runtime: pad reads=%zu, gamepad=%s\n",reads,gamepad ? SDL_GetGamepadName(gamepad) : "none"); }
+
+/* Mouse motion over the window since the last call, in window points, and the window's size
+ * (the battle map cursor, src/unicorn_mouse.h); with VW_PAD_FILE, its mouse=dx,dy tokens too. */
+void runtime_mouse_take(float *dx, float *dy, int *window_w, int *window_h) {
+    float x=0, y=0;
+    int w_px=0, h=0;
+    if (SDL_WasInit(SDL_INIT_VIDEO)) {
+        SDL_GetRelativeMouseState(&x,&y);
+        SDL_Window *w=SDL_GetMouseFocus();
+        if (!w || !(SDL_GetWindowFlags(w)&SDL_WINDOW_INPUT_FOCUS) || vwgpu_overlay_captures_input()) x=y=0;
+        else SDL_GetWindowSize(w,&w_px,&h);
+    }
+    pthread_mutex_lock(&lock);
+    read_inject();
+    x+=injected_mouse[0]; y+=injected_mouse[1];
+    injected_mouse[0]=injected_mouse[1]=0;
+    pthread_mutex_unlock(&lock);
+    if (w_px<=0 || h<=0) w_px=1381, h=776;   /* the window of scripted runs */
+    *dx=x; *dy=y; *window_w=w_px; *window_h=h;
+}
+
+/* Tilts the left stick toward (dx, dy) for two pad reads: after a facility menu the game keeps
+ * the map cursor on the facility until the stick moves it, which the mouse alone does not. */
+void runtime_mouse_nudge(float dx, float dy) {
+    const float length=SDL_sqrtf(dx*dx+dy*dy);
+    if (length<=0) return;
+    pthread_mutex_lock(&lock);
+    nudge_x=(int)(dx/length*60.0f); nudge_y=(int)(dy/length*60.0f);
+    nudge_reads=2;
+    pthread_mutex_unlock(&lock);
+}
