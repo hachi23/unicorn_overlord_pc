@@ -107,7 +107,7 @@ static void vk_failed(VkResult result, const char *call, const char *file, int l
 }
 #define CHECK(call) do { VkResult check_ = (call); if (check_ != VK_SUCCESS) vk_failed(check_, #call, __FILE__, __LINE__); } while (0)
 
-enum { MAX_TARGETS = 1024, MAX_TEXTURES = 2048, MAX_PIPELINES = 512, MAX_SAMPLERS = 64, MAX_STAGING = 256,
+enum { MAX_TARGETS = 1024, MAX_TEXTURES = 2048, MAX_PIPELINES = 4096, MAX_SAMPLERS = 64, MAX_STAGING = 256,
        LOCATIONS = 16, CONSTANT_RANGE = 4096, GAME_SLOTS = 16, TEXTURE_SLOTS = 8, FRAMES = 2,
        MAX_IMAGES = MAX_TARGETS + MAX_TEXTURES + 16 };
 
@@ -203,8 +203,14 @@ static void pipeline_cache_save(void) {
         }
     }
     free(data);
-    pipeline_cache_dirty = 0;
+    __atomic_store_n(&pipeline_cache_dirty, 0, __ATOMIC_RELAXED);
 }
+/* A pipeline by what it is made of (shader hashes, the game's blend word and write mask, the
+ * Vulkan topology). Every one the renderer makes is appended to <shader dir>/pipelines.txt; at
+ * start, those and the port's list (native_pipelines.h, from playthroughs) are compiled into the
+ * driver cache on a thread while the logos run, so a scene's first draws do not stutter. */
+typedef struct { uint32_t vs, ps, blend, mask, topology; } PipelineKey;
+static void pipeline_key_seen(PipelineKey key);
 static VkDescriptorPool bindless_pool;
 static VkDescriptorSet bindless_set;
 static uint32_t image_count;
@@ -522,6 +528,7 @@ static uint64_t memory_sample_hash(const uint8_t *p, size_t n) {
     if (n >= 64) h = memory_hash(p + n - 64, 64) ^ (h * 0xbf58476d1ce4e5b9ull);
     return h;
 }
+static uint64_t slow_upload_bytes;   /* texture bytes uploaded this frame (VW_NATIVE_SLOW_LOG) */
 /* Copies a texture's game memory into its image (detiled). The caller ends any open pass. */
 static void texture_fill(Texture *x) {
     const GnmTexture *t = &x->source;
@@ -531,6 +538,7 @@ static void texture_fill(Texture *x) {
     const uint32_t width = block ? (t->width + 3) / 4 : t->width, height = block ? (t->height + 3) / 4 : t->height;
     const uint32_t pitch = block ? (t->pitch + 3) / 4 : t->pitch;
     const VkDeviceSize size = (VkDeviceSize)width * height * bytes;
+    slow_upload_bytes += size;
     const uint8_t *source = (const uint8_t *)(uintptr_t)t->address;
     x->hash = memory_sample_hash(source, x->span);
     uint8_t *mapped;
@@ -633,31 +641,35 @@ static uint32_t sampler_index(const uint8_t raw[16]) {
 }
 
 /* ---- Pipelines ---- */
+/* The converted shader <shader dir>/<hash>.spv as a module; VK_NULL_HANDLE when there is none.
+ * Any thread (the pipeline warm-up loads its own). */
+static VkShaderModule module_load(uint32_t hash) {
+    char path[1100];
+    snprintf(path, sizeof(path), "%s/%08x.spv", shader_dir, hash);
+    FILE *f = fopen(path, "rb");
+    if (!f) return VK_NULL_HANDLE;
+    VkShaderModule module = VK_NULL_HANDLE;
+    long bytes = -1;
+    if (fseek(f, 0, SEEK_END) == 0) bytes = ftell(f);
+    uint32_t *code = bytes > 0 && fseek(f, 0, SEEK_SET) == 0 ? malloc((size_t)bytes) : NULL;
+    if (code && fread(code, 1, (size_t)bytes, f) == (size_t)bytes) {
+        const VkShaderModuleCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = (size_t)bytes, .pCode = code};
+        CHECK(vkCreateShaderModule(device, &info, NULL, &module));
+    }
+    free(code);
+    fclose(f);
+    return module;
+}
 static int program_of(uint32_t hash, int vertex) {
     const uint64_t key = (uint64_t)hash << 1 | (uint64_t)vertex;
     uint32_t found = map_get(&program_map, key);
     if (!found) {
         if (program_count == MAX_PROGRAMS) return -1;
         NativeProgram *p = &programs[program_count];
-        p->hash = hash, p->vertex = vertex, p->module = VK_NULL_HANDLE;
-        char path[1100];
-        snprintf(path, sizeof(path), "%s/%08x.spv", shader_dir, hash);
-        FILE *f = fopen(path, "rb");
-        if (f) {
-            fseek(f, 0, SEEK_END);
-            const long bytes = ftell(f);
-            fseek(f, 0, SEEK_SET);
-            uint32_t *code = malloc((size_t)bytes);
-            if (code && fread(code, 1, (size_t)bytes, f) == (size_t)bytes) {
-                const VkShaderModuleCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                    .codeSize = (size_t)bytes, .pCode = code};
-                CHECK(vkCreateShaderModule(device, &info, NULL, &p->module));
-            }
-            free(code);
-            fclose(f);
-        }
+        p->hash = hash, p->vertex = vertex, p->module = module_load(hash);
         if (!p->module)
-            report = 1, printf("Native: no converted %s shader %08x (%s)\n", vertex ? "vertex" : "pixel", hash, path);
+            report = 1, printf("Native: no converted %s shader %08x\n", vertex ? "vertex" : "pixel", hash);
         map_set(&program_map, key, found = ++program_count);
     }
     return programs[found - 1].module ? (int)found - 1 : -1;
@@ -678,6 +690,8 @@ static VkBlendOp blend_op(uint32_t f) {
     return f < 5 ? table[f] : VK_BLEND_OP_ADD;
 }
 static VkPipeline pipeline_create(int vs, int ps, VkPrimitiveTopology topology);
+static VkPipeline pipeline_build(VkShaderModule vs, VkShaderModule ps, uint32_t blend, uint32_t mask,
+                                 VkPrimitiveTopology topology);
 /* The pipeline for the draw's shaders and state; the last one is kept, as runs of draws share it. */
 static VkPipeline pipeline_get(int vs, int ps, VkPrimitiveTopology topology) {
     static uint32_t last[5];
@@ -706,11 +720,24 @@ static VkPipeline pipeline_create(int vs, int ps, VkPrimitiveTopology topology) 
     p->vs = (uint32_t)vs; p->ps = (uint32_t)ps; p->blend = state.blend; p->mask = state.mask;
     p->topology = (uint32_t)topology;
     map_set(&pipeline_map, key, pipeline_count);
+    const uint64_t compile_start = clock_ns();
+    p->pipeline = pipeline_build(programs[vs].module, programs[ps].module, state.blend, state.mask, topology);
+    const double compile_ms = (double)(clock_ns() - compile_start) / 1e6;
+    if (getenv("VW_NATIVE_PIPELINE_LOG"))
+        printf("Native: pipeline %08x/%08x blend %08x mask %x topology %u: %.2f ms\n", programs[vs].hash,
+               programs[ps].hash, state.blend, state.mask, (unsigned)topology, compile_ms);
+    pipeline_key_seen((PipelineKey){programs[vs].hash, programs[ps].hash, state.blend, state.mask, (uint32_t)topology});
+    __atomic_store_n(&pipeline_cache_dirty, 1, __ATOMIC_RELAXED);
+    return p->pipeline;
+}
+/* A pipeline for the converted shaders with the game's blend state and write mask. Any thread. */
+static VkPipeline pipeline_build(VkShaderModule vs, VkShaderModule ps, uint32_t b, uint32_t mask,
+                                 VkPrimitiveTopology topology) {
     const VkPipelineShaderStageCreateInfo stages[2] = {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .module = programs[vs].module, .pName = "main"},
+         .module = vs, .pName = "main"},
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .module = programs[ps].module, .pName = "main"}};
+         .module = ps, .pName = "main"}};
     /* The shaders fetch their own vertices from the record's streams. */
     const VkPipelineVertexInputStateCreateInfo input = {.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     const VkPipelineInputAssemblyStateCreateInfo assembly = {
@@ -722,7 +749,6 @@ static VkPipeline pipeline_create(int vs, int ps, VkPrimitiveTopology topology) 
         .cullMode = VK_CULL_MODE_NONE, .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE, .lineWidth = 1.0f};
     const VkPipelineMultisampleStateCreateInfo multisample = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
-    const uint32_t b = state.blend;
     const int separate = (b >> 29) & 1;
     const VkPipelineColorBlendAttachmentState attachment = {.blendEnable = (b >> 30) & 1,
         .srcColorBlendFactor = blend_factor(b & 0x1f), .colorBlendOp = blend_op((b >> 5) & 7),
@@ -730,7 +756,7 @@ static VkPipeline pipeline_create(int vs, int ps, VkPrimitiveTopology topology) 
         .srcAlphaBlendFactor = blend_factor(separate ? (b >> 16) & 0x1f : b & 0x1f),
         .alphaBlendOp = blend_op(separate ? (b >> 21) & 7 : (b >> 5) & 7),
         .dstAlphaBlendFactor = blend_factor(separate ? (b >> 24) & 0x1f : (b >> 8) & 0x1f),
-        .colorWriteMask = state.mask & 0xf};
+        .colorWriteMask = mask & 0xf};
     const VkPipelineColorBlendStateCreateInfo blend = {.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .attachmentCount = 1, .pAttachments = &attachment};
     const VkDynamicState dynamics[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -744,9 +770,94 @@ static VkPipeline pipeline_create(int vs, int ps, VkPrimitiveTopology topology) 
         .stageCount = 2, .pStages = stages, .pVertexInputState = &input, .pInputAssemblyState = &assembly,
         .pViewportState = &viewport, .pRasterizationState = &raster, .pMultisampleState = &multisample,
         .pDepthStencilState = &depth, .pColorBlendState = &blend, .pDynamicState = &dynamic, .layout = pipeline_layout};
-    CHECK(vkCreateGraphicsPipelines(device, pipeline_cache, 1, &info, NULL, &p->pipeline));
-    pipeline_cache_dirty = 1;
-    return p->pipeline;
+    VkPipeline pipeline;
+    CHECK(vkCreateGraphicsPipelines(device, pipeline_cache, 1, &info, NULL, &pipeline));
+    return pipeline;
+}
+
+/* ---- Pipeline warm-up ---- */
+#include "native_pipelines.h"
+static uint64_t pipeline_key_hash(PipelineKey k) {
+    const uint32_t words[5] = {k.vs, k.ps, k.blend, k.mask, k.topology};
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (int i = 0; i < 5; ++i) h = (h ^ words[i]) * 0x100000001b3ull;
+    return h;
+}
+static Map known_pipeline_map;          /* keys already in the list or the file (game thread after start) */
+static PipelineKey *warm_keys;
+static uint32_t warm_count;
+static int pipeline_key_add(PipelineKey k) {
+    const uint64_t h = pipeline_key_hash(k);
+    if (map_get(&known_pipeline_map, h)) return 0;
+    map_set(&known_pipeline_map, h, 1);
+    return 1;
+}
+static void pipeline_key_seen(PipelineKey k) {
+    if (!pipeline_key_add(k)) return;
+    char path[1100];
+    snprintf(path, sizeof(path), "%s/pipelines.txt", shader_dir);
+    FILE *f = fopen(path, "a");
+    if (!f) return;
+    fprintf(f, "%08x %08x %08x %x %u\n", k.vs, k.ps, k.blend, k.mask, k.topology);
+    fclose(f);
+}
+static void *pipeline_warm_thread(void *unused) {
+    (void)unused;
+    const uint64_t start = clock_ns();
+    /* Modules by hash, loaded once each and destroyed at the end. */
+    static uint32_t hashes[MAX_PROGRAMS];
+    static VkShaderModule modules[MAX_PROGRAMS];
+    uint32_t loaded = 0, built = 0;
+    for (uint32_t i = 0; i < warm_count; ++i) {
+        const PipelineKey k = warm_keys[i];
+        VkShaderModule m[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        const uint32_t want[2] = {k.vs, k.ps};
+        for (int s = 0; s < 2; ++s) {
+            for (uint32_t j = 0; j < loaded && !m[s]; ++j)
+                if (hashes[j] == want[s]) m[s] = modules[j];
+            if (!m[s] && loaded < MAX_PROGRAMS && (m[s] = module_load(want[s]))) {
+                hashes[loaded] = want[s];
+                modules[loaded++] = m[s];
+            }
+        }
+        if (!m[0] || !m[1]) continue;
+        vkDestroyPipeline(device, pipeline_build(m[0], m[1], k.blend, k.mask, (VkPrimitiveTopology)k.topology), NULL);
+        ++built;
+    }
+    for (uint32_t j = 0; j < loaded; ++j) vkDestroyShaderModule(device, modules[j], NULL);
+    free(warm_keys);
+    __atomic_store_n(&pipeline_cache_dirty, 1, __ATOMIC_RELAXED);
+    printf("Native: %u pipelines compiled ahead in %.1f s\n", built, (double)(clock_ns() - start) / 1e9);
+    return NULL;
+}
+/* Collects the port's list and this machine's pipelines.txt, then starts the warm-up thread. */
+static void pipeline_warm_start(void) {
+    const uint32_t shipped = sizeof(native_known_pipelines) / sizeof(*native_known_pipelines);
+    uint32_t capacity = shipped + 256;
+    warm_keys = malloc(capacity * sizeof(*warm_keys));
+    if (!warm_keys) return;
+    for (uint32_t i = 0; i < shipped; ++i) {
+        const PipelineKey k = {native_known_pipelines[i][0], native_known_pipelines[i][1], native_known_pipelines[i][2],
+                               native_known_pipelines[i][3], native_known_pipelines[i][4]};
+        if (pipeline_key_add(k)) warm_keys[warm_count++] = k;
+    }
+    char path[1100];
+    snprintf(path, sizeof(path), "%s/pipelines.txt", shader_dir);
+    FILE *f = fopen(path, "r");
+    PipelineKey k;
+    while (f && fscanf(f, "%x %x %x %x %u", &k.vs, &k.ps, &k.blend, &k.mask, &k.topology) == 5) {
+        if (!pipeline_key_add(k)) continue;
+        if (warm_count == capacity) {
+            PipelineKey *grown = realloc(warm_keys, (capacity *= 2) * sizeof(*warm_keys));
+            if (!grown) break;
+            warm_keys = grown;
+        }
+        warm_keys[warm_count++] = k;
+    }
+    if (f) fclose(f);
+    pthread_t thread;
+    if (!warm_count || pthread_create(&thread, NULL, pipeline_warm_thread, NULL) != 0) { free(warm_keys); return; }
+    pthread_detach(thread);
 }
 /* A vertex stream's format as native_input decodes it: 1..4 that many 32-bit floats, 5 four
  * 8-bit unorm; 0 when not handled. */
@@ -1212,7 +1323,7 @@ int native_target_read(uint64_t address, void *out, uint32_t left, uint32_t top,
 
 static void render_frame(NativeList *lists) {
     ++frame_number;
-    if (pipeline_cache_dirty && frame_number % 300 == 0) pipeline_cache_save();
+    if (__atomic_load_n(&pipeline_cache_dirty, __ATOMIC_RELAXED) && frame_number % 300 == 0) pipeline_cache_save();
     /* Wait until the GPU is done with this frame slot's previous use, then reuse it. */
     frame = &frames[frame_number % FRAMES];
     const uint64_t wait_start = clock_ns();
@@ -1250,6 +1361,19 @@ static void render_frame(NativeList *lists) {
     queue_submit(&submit, frame->fence);
     present_publish();
     replay_ns += clock_ns() - replay_start;
+    /* VW_NATIVE_SLOW_LOG=<ms>: say what a frame that took longer than that spent its time on. */
+    static double slow_ms = -1;
+    if (slow_ms < 0) { const char *e = getenv("VW_NATIVE_SLOW_LOG"); slow_ms = e ? atof(e) : 0; }
+    if (slow_ms > 0) {
+        static uint32_t last_textures, last_targets, last_pipelines;
+        const double ms = (double)(clock_ns() - wait_start) / 1e6;
+        if (ms > slow_ms)
+            printf("Native: slow frame %" PRIu64 ": %.1f ms (GPU wait %.1f), new: %u textures (%.1f MiB), %u targets, %u pipelines\n",
+                   frame_number, ms, (double)(replay_start - wait_start) / 1e6, texture_count - last_textures,
+                   (double)slow_upload_bytes / (1 << 20), target_count - last_targets, pipeline_count - last_pipelines);
+        last_textures = texture_count, last_targets = target_count, last_pipelines = pipeline_count;
+        slow_upload_bytes = 0;
+    }
     const char *dir = getenv("VW_NATIVE_DUMP_DIR");
     if (report && dir && *dir && reports < 32) {
         char path[4096];
@@ -1374,6 +1498,7 @@ static int render_init(uint32_t family) {
     vkCmdClearColorImage(cmd, dummy_texture.image, VK_IMAGE_LAYOUT_GENERAL, &white, 1, &range);
     once_end();
     pipeline_cache_open();
+    pipeline_warm_start();
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     printf("Native: renderer on %s\n", properties.deviceName);
