@@ -636,24 +636,24 @@ static const RuntimeExport exports[]={
 uintptr_t runtime_pad_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
 void runtime_pad_report(void) { printf("Runtime: pad reads=%zu, gamepad=%s\n",reads,gamepad ? SDL_GetGamepadName(gamepad) : "none"); }
 
-/* Mouse motion over the window, in window heights, since the last call (the battle map cursor,
- * src/unicorn_mouse.h); with VW_PAD_FILE, its mouse=dx,dy tokens too. */
-void runtime_mouse_take(float *dx, float *dy) {
+/* Mouse motion over the window since the last call, in window points, and the window's size
+ * (the battle map cursor, src/unicorn_mouse.h); with VW_PAD_FILE, its mouse=dx,dy tokens too. */
+void runtime_mouse_take(float *dx, float *dy, int *window_w, int *window_h) {
     float x=0, y=0;
-    int h=0;
+    int w_px=0, h=0;
     if (SDL_WasInit(SDL_INIT_VIDEO)) {
         SDL_GetRelativeMouseState(&x,&y);
         SDL_Window *w=SDL_GetMouseFocus();
         if (!w || !(SDL_GetWindowFlags(w)&SDL_WINDOW_INPUT_FOCUS) || vwgpu_overlay_captures_input()) x=y=0;
-        else SDL_GetWindowSize(w,NULL,&h);
+        else SDL_GetWindowSize(w,&w_px,&h);
     }
     pthread_mutex_lock(&lock);
     read_inject();
     x+=injected_mouse[0]; y+=injected_mouse[1];
     injected_mouse[0]=injected_mouse[1]=0;
     pthread_mutex_unlock(&lock);
-    if (h<=0) h=776;   /* the window of scripted runs */
-    *dx=x/(float)h; *dy=y/(float)h;
+    if (w_px<=0 || h<=0) w_px=1381, h=776;   /* the window of scripted runs */
+    *dx=x; *dy=y; *window_w=w_px; *window_h=h;
     vwgpu_mouse_map_active();
 }
 
