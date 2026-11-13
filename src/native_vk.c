@@ -220,6 +220,11 @@ typedef struct {
     VkCommandBuffer cmd;
     VkFence fence;
     Ring constants, vertex, index, records, indirect;
+    /* Texture uploads: kept between frames, so its pages fault in only once (a new allocation
+     * per texture spent as long in page faults as in detiling). Grown at the slot's
+     * next use when a frame needed more; what does not fit goes to one-off staging buffers. */
+    Ring upload;
+    VkDeviceSize upload_wanted;
     uint32_t staging_count, record_count;
     struct { VkBuffer buffer; VkDeviceMemory memory; } staging[MAX_STAGING];
 } Frame;
@@ -326,6 +331,21 @@ static void buffer_create(VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer 
     void *p;
     CHECK(vkMapMemory(device, *memory, 0, size, 0, &p));
     *mapped = p;
+}
+static void ring_create(Ring *ring, VkDeviceSize size, VkBufferUsageFlags usage);
+enum { UPLOAD_START = 32 << 20, UPLOAD_MAX = 256 << 20 };
+/* The frame slot's texture upload ring, empty, and grown first if its last frame wanted more. */
+static void upload_ring_reset(Frame *f) {
+    f->upload.used = 0;
+    if (f->upload.buffer && (f->upload_wanted <= f->upload.size || f->upload.size >= UPLOAD_MAX)) return;
+    VkDeviceSize size = f->upload.size ? f->upload.size : UPLOAD_START;
+    while (size < f->upload_wanted && size < UPLOAD_MAX) size *= 2;
+    if (f->upload.buffer) {
+        vkDestroyBuffer(device, f->upload.buffer, NULL);
+        vkFreeMemory(device, f->upload.memory, NULL);
+    }
+    ring_create(&f->upload, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);   /* pages fault in once, on first use */
+    f->upload_wanted = 0;
 }
 static void ring_create(Ring *ring, VkDeviceSize size, VkBufferUsageFlags usage) {
     ring->size = size;
@@ -492,21 +512,68 @@ static uint32_t texture_format(uint32_t format, uint32_t number, VkFormat *out, 
 /* Tile mode 13 (Thin_1dThin): 8x8-element micro tiles in rows of `pitch` elements; inside a
  * tile the elements are in Morton order (x0 y0 x1 y1 x2 y2), whatever the element size. An
  * element is a pixel, or a 4x4 block for BC formats. This lays them out as plain rows. */
+/* Rows [y0, y1) of a 2D-tiled (micro tile 8x8, Morton order) texture into linear rows. Each
+ * output row takes 8 pixels from each tile it crosses; the copies have a fixed size so they
+ * compile to plain loads and stores. */
+#define UNTILE_ROWS(BYTES)                                                                          \
+    for (uint32_t y = y0; y < y1; ++y) {                                                            \
+        uint8_t *out = dst + (size_t)y * width * BYTES;                                             \
+        const uint8_t *row = src + (size_t)(y / 8) * tiles_x * 64 * BYTES;                          \
+        const uint8_t *m = morton + (y & 7) * 8;                                                    \
+        uint32_t x = 0;                                                                             \
+        for (; x + 8 <= width; x += 8, out += 8 * BYTES) {                                          \
+            const uint8_t *tile = row + (size_t)(x / 8) * 64 * BYTES;                               \
+            for (int k = 0; k < 8; ++k) memcpy(out + k * BYTES, tile + m[k] * BYTES, BYTES);        \
+        }                                                                                           \
+        for (; x < width; ++x, out += BYTES)                                                        \
+            memcpy(out, row + ((size_t)(x / 8) * 64 + m[x & 7]) * BYTES, BYTES);                    \
+    }
+static uint8_t morton[64];
+static void untile_rows(const uint8_t *src, uint8_t *dst, uint32_t width, uint32_t pitch, uint32_t bytes,
+                        uint32_t y0, uint32_t y1) {
+    const uint32_t tiles_x = (pitch + 7) / 8;
+    switch (bytes) {
+    case 1: UNTILE_ROWS(1) break;
+    case 2: UNTILE_ROWS(2) break;
+    case 4: UNTILE_ROWS(4) break;
+    case 8: UNTILE_ROWS(8) break;
+    case 16: UNTILE_ROWS(16) break;
+    default: UNTILE_ROWS(bytes) break;
+    }
+}
+typedef struct { const uint8_t *src; uint8_t *dst; uint32_t width, pitch, bytes, y0, y1; } UntileJob;
+static void *untile_job(void *arg) {
+    const UntileJob *j = arg;
+    untile_rows(j->src, j->dst, j->width, j->pitch, j->bytes, j->y0, j->y1);
+    return NULL;
+}
 static void untile(const uint8_t *src, uint8_t *dst, uint32_t width, uint32_t height, uint32_t pitch, uint32_t bytes) {
-    static uint8_t morton[64];
     if (!morton[63])
         for (uint32_t i = 0; i < 64; ++i) {
             const uint32_t x = (i & 1) | ((i >> 1) & 2) | ((i >> 2) & 4), y = ((i >> 1) & 1) | ((i >> 2) & 2) | ((i >> 3) & 4);
             morton[y * 8 + x] = (uint8_t)i;
         }
-    const uint32_t tiles_x = (pitch + 7) / 8;
-    for (uint32_t y = 0; y < height; ++y) {
-        uint8_t *out = dst + (size_t)y * width * bytes;
-        for (uint32_t x = 0; x < width; ++x) {
-            const size_t tile = (size_t)(y / 8) * tiles_x + x / 8;
-            memcpy(out + (size_t)x * bytes, src + (tile * 64 + morton[(y & 7) * 8 + (x & 7)]) * bytes, bytes);
-        }
+    /* Large textures (scene backgrounds, 4-48 MiB) in bands of whole tile rows on 4 threads:
+     * one thread reaches about 3 GB/s. */
+    enum { THREADS = 4, PARALLEL_BYTES = 4 << 20 };
+    if ((size_t)width * height * bytes < PARALLEL_BYTES || height < 8 * THREADS) {
+        untile_rows(src, dst, width, pitch, bytes, 0, height);
+        return;
     }
+    UntileJob jobs[THREADS];
+    pthread_t threads[THREADS];
+    int started[THREADS] = {0};
+    const uint32_t band = ((height + THREADS - 1) / THREADS + 7) & ~7u;
+    for (int i = 0; i < THREADS; ++i) {
+        const uint32_t y0 = (uint32_t)i * band < height ? (uint32_t)i * band : height;
+        const uint32_t y1 = y0 + band < height ? y0 + band : height;
+        jobs[i] = (UntileJob){src, dst, width, pitch, bytes, y0, y1};
+        if (i > 0) started[i] = pthread_create(&threads[i], NULL, untile_job, &jobs[i]) == 0;
+        if (i > 0 && !started[i]) untile_job(&jobs[i]);
+    }
+    untile_job(&jobs[0]);
+    for (int i = 1; i < THREADS; ++i)
+        if (started[i]) pthread_join(threads[i], NULL);
 }
 /* A fast hash of game memory (8 bytes at a time). */
 static uint64_t memory_hash(const uint8_t *p, size_t n) {
@@ -528,7 +595,7 @@ static uint64_t memory_sample_hash(const uint8_t *p, size_t n) {
     if (n >= 64) h = memory_hash(p + n - 64, 64) ^ (h * 0xbf58476d1ce4e5b9ull);
     return h;
 }
-static uint64_t slow_upload_bytes;   /* texture bytes uploaded this frame (VW_NATIVE_SLOW_LOG) */
+static uint64_t slow_upload_bytes, slow_alloc_ns, slow_copy_ns;   /* texture bytes uploaded this frame (VW_NATIVE_SLOW_LOG) */
 /* Copies a texture's game memory into its image (detiled). The caller ends any open pass. */
 static void texture_fill(Texture *x) {
     const GnmTexture *t = &x->source;
@@ -542,18 +609,31 @@ static void texture_fill(Texture *x) {
     const uint8_t *source = (const uint8_t *)(uintptr_t)t->address;
     x->hash = memory_sample_hash(source, x->span);
     uint8_t *mapped;
-    buffer_create(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &staging[staging_count].buffer, &staging[staging_count].memory, &mapped);
+    VkBuffer from;
+    VkDeviceSize offset = 0;
+    const uint64_t t0 = clock_ns();
+    Ring *up = &frame->upload;
+    const VkDeviceSize at = (up->used + 15) & ~(VkDeviceSize)15;   /* a multiple of every texel size */
+    if (at + size <= up->size) {
+        from = up->buffer, offset = at, mapped = up->mapped + at;
+        up->used = at + size;
+    } else {
+        if (at + size > frame->upload_wanted) frame->upload_wanted = at + size;
+        buffer_create(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &staging[staging_count].buffer, &staging[staging_count].memory, &mapped);
+        from = staging[staging_count++].buffer;
+    }
+    const uint64_t t1 = clock_ns();
     if (t->tiling == 13) {
         untile(source, mapped, width, height, pitch, bytes);
     } else {
         for (uint32_t y = 0; y < height; ++y)
             memcpy(mapped + (size_t)y * width * bytes, source + (size_t)y * pitch * bytes, (size_t)width * bytes);
     }
-    const VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+    slow_alloc_ns += t1 - t0, slow_copy_ns += clock_ns() - t1;
+    const VkBufferImageCopy copy = {.bufferOffset = offset, .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
                                     .imageExtent = {t->width, t->height, 1}};
-    vkCmdCopyBufferToImage(cmd, staging[staging_count].buffer, x->image.image, VK_IMAGE_LAYOUT_GENERAL, 1, &copy);
+    vkCmdCopyBufferToImage(cmd, from, x->image.image, VK_IMAGE_LAYOUT_GENERAL, 1, &copy);
     barrier();
-    ++staging_count;
 }
 /* The game loads new content into memory a texture was made from (the location emblem goes
  * into a UI atlas after the atlas is first drawn). Each frame, before replay, a few textures
@@ -1336,6 +1416,7 @@ static void render_frame(NativeList *lists) {
         vkFreeMemory(device, staging[i].memory, NULL);
     }
     staging_count = 0;
+    upload_ring_reset(frame);
     /* Offset 0 of the constants (zeros) is what a shader reads when the game bound nothing. */
     vertex_ring.used = index_ring.used = 0;
     constants_ring.used = CONSTANT_RANGE;
@@ -1368,11 +1449,11 @@ static void render_frame(NativeList *lists) {
         static uint32_t last_textures, last_targets, last_pipelines;
         const double ms = (double)(clock_ns() - wait_start) / 1e6;
         if (ms > slow_ms)
-            printf("Native: slow frame %" PRIu64 ": %.1f ms (GPU wait %.1f), new: %u textures (%.1f MiB), %u targets, %u pipelines\n",
-                   frame_number, ms, (double)(replay_start - wait_start) / 1e6, texture_count - last_textures,
+            printf("Native: slow frame %" PRIu64 ": %.1f ms (GPU wait %.1f, staging alloc %.1f, detile %.1f), new: %u textures (%.1f MiB), %u targets, %u pipelines\n",
+                   frame_number, ms, (double)(replay_start - wait_start) / 1e6, slow_alloc_ns / 1e6, slow_copy_ns / 1e6, texture_count - last_textures,
                    (double)slow_upload_bytes / (1 << 20), target_count - last_targets, pipeline_count - last_pipelines);
         last_textures = texture_count, last_targets = target_count, last_pipelines = pipeline_count;
-        slow_upload_bytes = 0;
+        slow_upload_bytes = slow_alloc_ns = slow_copy_ns = 0;
     }
     const char *dir = getenv("VW_NATIVE_DUMP_DIR");
     if (report && dir && *dir && reports < 32) {
@@ -1479,6 +1560,7 @@ static int render_init(uint32_t family) {
         ring_create(&f->indirect, MAX_RECORDS * sizeof(VkDrawIndexedIndirectCommand), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
         ring_create(&f->index, 16u << 20, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
         memset(f->constants.mapped, 0, CONSTANT_RANGE);
+        upload_ring_reset(f);
     }
     frame = &frames[0];
     const VkSamplerCreateInfo sampler_info = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
