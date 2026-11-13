@@ -629,6 +629,26 @@ void Menu() {
     } else {
         ImGui::NewLine();
     }
+    // Quit (issue #91): the same way out as closing the window, after a confirmation.
+    if (ImGui::Button("Quit game")) {
+        ImGui::OpenPopup("Quit the game?");
+    }
+    if (ImGui::BeginPopupModal("Quit the game?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Progress since your last save is lost.");
+        if (ImGui::Button("Quit")) {
+            VwSettings::Save();
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
     const float close_width = ImGui::CalcTextSize("Close").x + ImGui::GetStyle().FramePadding.x * 2;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - close_width);
     if (ImGui::Button("Close")) {

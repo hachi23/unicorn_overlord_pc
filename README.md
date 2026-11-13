@@ -86,7 +86,8 @@ Settings are saved in `vw.ini`; **Restore Defaults** resets them too.
 > menu, change the resolution under **Performance**, then choose **Apply and restart**. If you
 > change it in the game's **System → Options → PC** section, close and relaunch the game.
 
-In game, **Insert** (R3+L2 on a controller) opens the port's overlay menu with every setting. It has
+In game, **Insert** (R3+L2 on a controller) opens the port's overlay menu with every setting, and a
+**Quit game** button at the bottom (the game has none of its own). It has
 four tabs:
 
 - **Image:** display mode, VSync, **Anime4K**, FSR 1 and RCAS sharpening. Anime4K (Fast or
