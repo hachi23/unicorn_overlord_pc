@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "../gpu/shim/vw_png.h"
+#include "../gpu/platform/vw_png.h"
 
 // 2x2 RGB: red, green / blue, white.
 static const unsigned char kPng[] = {

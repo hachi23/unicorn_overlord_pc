@@ -12,9 +12,8 @@ if [[ ${MSYSTEM:-} != CLANG64 ]]; then
 fi
 pacman -S --needed --noconfirm git patch make tar xz \
     mingw-w64-clang-x86_64-{toolchain,cmake,ninja,pkgconf,python,nasm} \
-    mingw-w64-clang-x86_64-{vulkan-headers,vulkan-loader,vulkan-memory-allocator,glslang} \
-    mingw-w64-clang-x86_64-{sdl3,fmt,boost,robin-map,xxhash,ffmpeg,zydis} \
-    mingw-w64-clang-x86_64-{spirv-tools,spirv-headers,spirv-cross}
+    mingw-w64-clang-x86_64-{vulkan-headers,vulkan-loader,glslang} \
+    mingw-w64-clang-x86_64-{sdl3,ffmpeg}
 git submodule update --init --recursive
 bash build.sh --static
 # PyInstaller needs a python.org Python (the py launcher), not MSYS2's.

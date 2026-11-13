@@ -700,7 +700,7 @@ static void install_unicorn_native_settings(const char *app0) {
 static const unsigned char unicorn_text_language_signature[] = {
     0x8d, 0x48, 0xf7, 0x83, 0xc0, 0xfd, 0xba, 0x07, 0x00, 0x00, 0x00, 0x83, 0xf9, 0x03, 0x0f, 0x42, 0xd0};
 
-/* The game's language for a TextLanguages key (gpu/shim/vw_graphics.h), -1 for auto. */
+/* The game's language for a TextLanguages key (gpu/platform/vw_graphics.h), -1 for auto. */
 static int unicorn_text_language_value(const char *text) {
     static const struct { const char *key; int value; } languages[] = {
         {"japanese", 0}, {"english", 1}, {"french", 2}, {"spanish", 3}, {"german", 4}, {"italian", 5},
@@ -1094,20 +1094,13 @@ int main(int argc, char **argv) {
     install_unicorn_cri_hook(app0, segments, ns);
     install_unicorn_bubble_text(app0, segments, ns);
     if (gpu_enabled) install_unicorn_native_settings(app0);
-    /* The native renderer (VW_NATIVE, src/native_gfx.h): v01.04 only for now. */
+    /* The renderer (src/native_gfx.h) hooks the game's graphics library: v01.04 only for now. */
     if (gpu_enabled) {
-        char renderer[32];
-        startup_setting("VW_NATIVE", "renderer", renderer, sizeof(renderer));
-        native_gfx_select(renderer);
-        if (native_gfx_mode() && !(unicorn_known_build(app0) && unicorn_build == UNICORN_V0104)) {
-            printf("Native: the native renderer needs game version 01.04; shadPS4 draws instead\n");
-            native_gfx_select("0");
-        }
-    }
-    if (native_gfx_mode()) {
+        if (!unicorn_known_build(app0))
+            fail("this build draws only Unicorn Overlord CUSA36381 v01.04 or the Hong Kong 1.05 package");
         const size_t stub_bytes = 16 * page_size;
         unsigned char *stubs = allocate(stub_bytes);
-        native_gfx_install(image, stubs, stub_bytes);
+        if (!native_gfx_install(image, stubs, stub_bytes, unicorn_address)) fail("the renderer did not start (see the lines above)");
         protect(stubs, stub_bytes, 5);
     }
     install_unicorn_text_language(app0);

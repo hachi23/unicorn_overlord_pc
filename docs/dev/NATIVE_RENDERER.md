@@ -1,111 +1,234 @@
-# Native renderer: plan and handoff (2026-11-12)
+# The renderer (experimental since v1.6.0)
 
-## Start here (2026-11-13: released as experimental)
+Read this before any graphics work. It explains how the port draws, where each part lives, how
+to change and check it, and what is left. The tools are listed in
+[tools/native/README.md](../../tools/native/README.md).
 
-The native renderer ships as an opt-in, experimental setting. The owner has stopped working on
-it; this section is for whoever picks it up. Everything below it is the history of how it was
-built and stays accurate unless this section says otherwise.
+Up to v1.5.2 the port drew through shadPS4's video core: it decoded the PS4 command buffers the
+game built and recompiled its shaders. Since v1.6.0 that code is gone (about 246,000 lines). The
+port hooks the game's own graphics library, records what the game asks for, and draws it with
+Vulkan. There is no GPU emulation left. The renderer ships marked **experimental** (README,
+release notes, the menu's About section, the `Native: renderer (experimental)` log line).
 
-**What players get.** Performance menu > **Renderer** > *Native (experimental)* (`renderer=native`
-in `vw.ini`, or `VW_NATIVE=own`). shadPS4 stays the default.
+## 1. How a frame is drawn
 
-**How it works, in four lines.**
-1. `src/native_rec.c` hooks 29 entry points of the game's statically linked Gnmx library (v01.04
-   only) and records draws, state and resources into per-context lists; with `own` it never runs
-   the game's own Gnmx code, so the PS4 command buffers carry only sync, labels and flips.
-2. `src/native_vk.c` replays each frame with Vulkan on shadPS4's device: one 544-byte record per
-   draw (texture slots, constant-buffer addresses, vertex streams), vertex pulling, bindless
-   textures, indirect batching. The presenter samples its display image (`native_present_image`).
-3. Shaders: at first start `vwgpu_native_convert` (`gpu/shim/native_convert.cpp`) runs shadPS4's
-   recompiler in native mode (`Profile::native_renderer`) over every shader in the player's
-   `eboot.bin` into `<user>/native_shaders` (1726 of 1728). Never commit or ship those files.
-4. Save thumbnails: the game detiles a render target on the CPU; the hook on 0x20df20 reads the
-   native image back instead (`native_target_read`).
+```
+game render passes -> engine device layer -> Gnmx entry (hooked, src/native_rec.c)
+                                               '-> recorder: one command list per graphics context
+Gnmx submit / submitAndFlip (hooked) -> the lists join a frame -> src/native_vk.c replays it
+                                                                     '-> display image -> presenter
+sceGnmSubmit* (gpu/platform/gnm.cpp) -> command thread: labels, end-of-pipe events, flip marker
+sceVideoOut* (gpu/platform/video_out.cpp) -> flip thread: vblank, flip events, presenter
+```
 
-**Safety nets.** It turns itself off, and shadPS4 draws, when: the game is not v01.04; the hook
-sites do not look as expected; shader conversion fails; the GPU lacks a needed feature
-(`features_present`: Vulkan 1.3, Int64, buffer device address, bindless arrays, demote,
-subgroup ballot); or Vulkan setup fails. Each case prints a `Native:` line. The launcher's
-startup-option revert (`scripts/graphics_options.py`) covers the renderer setting: a start after
-**Apply and restart** that never reaches the game goes back to shadPS4.
+1. **Start.** `src/probe.c` checks the build (`unicorn_known_build`: v01.04 or the Hong Kong 1.05
+   package), then `native_gfx_install` writes a 5-byte jump at each of 29 entry points of the
+   game's statically linked Gnmx library. Addresses are v01.04 image offsets, moved for other
+   builds by `unicorn_address()` (`src/unicorn_build.h`). Each hook checks the function's
+   prologue (`push rbp; mov rbp, rsp; push reg`) before patching; a mismatch stops the start
+   with a `Native:` line naming the entry.
+2. **Shaders.** `native_render_init` translates every vertex and pixel shader in the player's
+   `eboot.bin` into `<user>/native_shaders/<hash>.spv` (about 1.5 s for 1726 shaders) with
+   `ns_convert_all`. A `stamp` file (translator version, eboot size and time) skips it on
+   later starts. Converted shaders are game data: **never commit or ship them.**
+3. **Recording** (`src/native_rec.c`, game thread). The hooks append fixed-size commands to the
+   calling context's list: state (blend, mask, viewport, scissor, primitive type), resources
+   (T#, V#, S# descriptors, constant buffers, vertex buffers; LCUE calls take
+   `context + 0x1c8`), shaders (the hash from the shader's footer), draws and dispatches. They
+   do **not** run the game's Gnmx code, so the PS4 command buffers the game submits carry only
+   synchronisation (labels, end-of-pipe events) and the flip marker.
+4. **Replay** (`src/native_vk.c`). At submit-and-flip the frame's lists (usually 5: four display
+   lists and the main context, which flips) are replayed: one 544-byte **record** per draw
+   (texture slots, constant buffer addresses, vertex streams), vertex pulling in the shaders,
+   bindless textures, consecutive draws with the same pipeline and target batched into one
+   `vkCmdDrawIndexedIndirect`. Two frames in flight. The display image is copied into one of
+   four images the presenter samples.
+5. **Command buffers** (`gpu/platform/gnm.cpp`). `sceGnmSubmit*` copies the submitted buffers
+   and a command thread walks their PM4 packets for what the game waits on: `WRITE_DATA`,
+   `EVENT_WRITE_EOP`/`RELEASE_MEM` (label writes, end-of-pipe interrupts into the event queues),
+   `DMA_DATA` memory fills, `INDIRECT_BUFFER` (nested at most 4 deep), and the flip marker
+   64 dwords before the end of a submit-and-flip buffer. Everything else is skipped:
+   drawing already happened through the hooks.
+6. **Flips and present** (`gpu/platform/video_out.cpp`, `presenter.cpp`). The flip thread paces
+   flips to the vblank, signals VideoOut events, and the presenter scales the image into the
+   window (FSR 1, CAS sharpening, Anime4K, supersampling) and draws the ImGui menu on top.
+7. **Save thumbnails.** The game detiles a render target on the CPU
+   (`GpuAddress::detileSurfaceRegion`, 0x20df20) to make the JPEG. That hook reads the native
+   image back instead (`native_target_read`).
 
-**Verified (by picture against shadPS4, RX 560X and Vega 8, Linux).** Boot intro, title, the New
-Game opening through the chapter 1 title card, the tutorial battle map, menus, save/load with
-thumbnails, two player saves from issue #34 (Ravaged Swamp quest, battle map, stage menu), and
-every display option (720p + FSR, 4K, 21:9, Anime4K). Performance: RX 560X opening 60 FPS vs
-36-54; Vega 8 46-60 vs 38-59.
+## 2. Code map
 
-**Not verified; the work that is left, most useful first.**
-1. Later chapters. No saves past chapter 1 were available. Load late saves in both renderers
-   (`tools/native/tour.sh`) and compare pictures; watch for `Native:` warnings (`no converted`,
-   `not handled`, `skipped`). The two unconverted shaders (e041714c, 546af9ea) may show up there.
-2. Windows. The code is portable (MinGW, UTF-8 manifest, `sysv_abi` hooks) and builds in CI, but
-   it has not been run on Windows.
-3. NVIDIA and Intel GPUs, and the Steam Deck.
-4. Depth testing and culling are not applied (nothing seen so far needed them); the two compute
-   shaders other than the fill are not handled; render targets are assumed RGBA8.
-5. CPU reads of rendered memory other than the thumbnail path return nothing.
-6. Long sessions: target, texture and pipeline counts are not bounded yet; watch memory over hours.
-7. Recording still runs on the game thread (~0.6 µs per draw).
+| File | What it is |
+|---|---|
+| `src/native_rec.c` | The 29 hooks, per-context lists, frame assembly, frame text dumps |
+| `src/native_gfx.h` | The command list format and the recorder/renderer interface |
+| `src/native_gnm.h` | Decoders: T# (texture), V# (buffer), render target, shader header, fetch shader |
+| `src/native_vk.c` | Vulkan replay: targets, textures (detiling), pipelines, records, batching, readback |
+| `src/native_shader.{h,c}` | Shader containers in the eboot (`ns_find_shaders`), GCN decoder, disassembler |
+| `src/native_shader_spirv.c` | GCN → SPIR-V (`ns_translate`, `ns_convert_all`) |
+| `src/unicorn_build.h` | Known builds and the v01.04 → HK 1.05 address map |
+| `gpu/platform/vulkan.cpp` | Instance, GPU choice (`VW_GPU_ID`, else the first discrete), device |
+| `gpu/platform/presenter.cpp` | Swapchain, scaling, FSR 1 / CAS / Anime4K passes, frame dumps |
+| `gpu/platform/gnm.cpp` | GnmDriver: submits, the command thread, GPU events |
+| `gpu/platform/video_out.cpp` | VideoOut: buffers, flips, vblank, the flip thread, `VW_FRAME_STATS` |
+| `gpu/platform/equeue.cpp` | Kernel event queues (user, VideoOut, graphics events) |
+| `gpu/platform/window.cpp`, `vw_overlay.cpp`, `vw_settings.cpp` | SDL3 window, the ImGui menu, `vw.ini` |
+| `gpu/platform/vwgpu.cpp`, `gpu/vwgpu.h` | The C interface the runtime calls (`vwgpu_*`) |
+| `tools/native/` | Build, checks, picture comparisons, shader dumps ([README](../../tools/native/README.md)) |
+| `tests/test_native_shader.c` | Container scan, translator (+ `spirv-val`), disassembler |
+| `tests/test_gpu_platform.cpp` | Command thread (indirect buffers, labels, end-of-pipe) and event queues |
+| `tests/test_build.c` | The HK address map, including every hook |
 
-**Tools.** `tools/native/build.sh` (static build), `go.sh MODE` (start to the title),
-`tour.sh MODE MOVE OUT_DIR steps...` (load a save, capture after each pad step), `bench.sh`,
-`check.sh` (picture grids). Section 5 has the rest. The scripts take the game folder from
-`VW_GAME_DIR`; the analysis scripts read the linked image from `UO_ELF` (`eboot_ghidra.elf`,
-from `scripts/`'s preparation) and `ghidra/gh.sh` needs `UO_GHIDRA_PROJECT` (and `GHIDRA_HOME`).
+`gpu/VENDOR.txt` lists what still follows shadPS4 (layouts and values only, no code).
 
-Section 1's goal of hand-written GLSL and removing shadPS4 was dropped: shaders are converted
-with shadPS4's recompiler at first start, and shadPS4 remains as the default and fallback.
+## 3. The shader translator
 
----
+The game has 1743 shader blobs (1731 unique; 620 VS, 1120 PS, 3 CS); `ns_find_shaders` finds
+1726 VS/PS containers. `e041714c` and `546af9ea` have no container the scan recognises and are
+not translated; nothing seen so far draws with them (the renderer logs a missing shader once).
 
-Read the rest if you are continuing the native renderer work. It records the goal, what was
-found in the game's executable, what is built, what is and is not verified, and the steps left.
+The model (`src/native_shader_spirv.c` top comment has the details):
 
-- Worktree: `~/unicorn_overlord_pc_native`, branch `claude/native-renderer` (from `unicorn/main`
-  at `3cfcc33`). **Nothing is committed yet**; the owner has not asked for a commit.
-- Game: Unicorn Overlord CUSA36381 **v01.04** only. All addresses below are v01.04 image
-  offsets. The Hong Kong 1.05 build is not mapped (`unicorn_address()` has no ranges for this
-  code), so the feature turns itself off there.
-- Ghidra: project `~/uo_re2/ghidra-project` (program `eboot_ghidra.elf`), driven headless with
-  `tools/native/ghidra/gh.sh`. The Ghidra MCP instance holds another project; do not switch it.
+- One invocation per GCN lane. Each VGPR is a `u32` function variable; scalar registers that hold
+  descriptors or table pointers are tracked while translating, so every resource is known by its
+  game slot; 64-bit lane masks become one bool per invocation.
+- Branches that skip when no lane is active fall through; while and do-while loops become
+  structured loops; anything else fails the shader by name.
+- No float execution modes are declared, and `NoContraction` sits only on the few operations
+  that need exact results. (Issue #74: strict float modes made AMD's Windows driver run the
+  title's blur 8x slower under v1.5.2.)
+- The interface with `native_vk.c`: push constant = the records' address; the record index is
+  `gl_InstanceIndex` (the draw's `firstInstance`), passed flat at location 15; record layout
+  `slot[8]` @0, `block[2][16]` @32, `stream[16]` @288 (544 bytes). **This layout is written in
+  both files; change them together.**
 
-## 1. Goal and the owner's decisions
+**Adding an instruction** (a new game, a later chapter, or `not handled` in the log):
 
-The owner wants a **genuine native PC port**: no shadPS4 emulation code left, except possibly
-the OS layer. Concretely:
+1. `cc -std=c11 -O2 -Isrc tools/native/ns_dump.c src/native_shader*.c -o out/ns_dump`, then
+   `out/ns_dump <eboot> <hash>` prints the shader's header and disassembly.
+2. If the decoder prints `?`, add the opcode to the table in `src/native_shader.h` (encoding and
+   number from the GCN3/Sea Islands ISA manual).
+3. Implement it in the `switch (n->operation)` of `native_shader_spirv.c`.
+4. Add a small hand-assembled case to `tests/test_native_shader.c` (see `white_ps`), then run
+   `bash tools/native/check.sh <eboot>`: every shader must still pass `spirv-val`.
+5. Bump `CONVERTER_VERSION` in `src/native_vk.c` so players' converted shaders are redone.
+6. Compare the scene with `tools/native/parity.sh`.
 
-1. No GPU command-buffer emulation, no texture/buffer cache keyed on guest memory, no shader
-   recompiler. `gpu/shadps4` (about 100,000 lines) goes away.
-2. The game's graphics are drawn by our own Vulkan renderer with **hand-written GLSL** that
-   recreates each game shader.
-3. The x86-64 eboot keeps running natively, and `src/runtime_*.c` (our own OS layer) stays.
+## 4. Supported builds, and adding one
 
-4. **The native port must run faster than the current shadPS4 build** (owner, 2026-11-12).
-   Baseline to beat, measured with `VW_FRAME_STATS=1 VW_VSYNC=0` on the laptop (RX 560X):
-   New Game opening, ~4,100-4,400 draws/frame, **51-52 FPS**, CPU-bound in the translator
-   (stage A ~3.9 µs/draw, stage B ~77% busy). Light scene (Palevia battle map, ~1,100
-   draws) at 60. The native renderer has no PM4 decode, no guest-memory caches and no shader
-   recompile, so the target is the opening **uncapped above 60 FPS** with recording + replay
-   costing **under 1 µs/draw** on the CPU. See section 6a for the design rules this implies.
+v01.04 (the 1.04 update, also with the fan English patch, whose eboot is the official one) and
+the Hong Kong 1.05 package. The HK build has the same code moved; the hooks map like this:
 
-Reference project the owner pointed at: `junminlee2004/GR2port` (Gravity Rush 2). It cuts in
-at the scene level and rewrites the frame; we cut in lower (see section 3) because this game is
-a 2D sprite engine whose draws are already simple.
+| v01.04 range | HK shift | What |
+|---|---|---|
+| `0x3ede0` | +400 | engine: fill memory with a compute shader (target clears) |
+| `0x20df20` | +944 | detileSurfaceRegion (save thumbnails) |
+| `0x2146d0`-`0x215b10` | +944 | Gnmx context state, draw, dispatch |
+| `0x218ae0`-`0x21c1f0` | +960 | Gnmx LCUE resources, shaders, submit, viewport |
 
-## 2. What the executable looks like (Ghidra findings)
+They were found with `tools/re/map_addresses.py <v0104.elf> <hk.elf> <addresses...>` on the
+Ghidra ELFs (`tools/re/make_ghidra_elf.py`): every hook matched 0.94-1.00 of its surrounding
+bytes. For another build: do the same, add ranges to `unicorn_hk0105_ranges` (or a table of
+its own), add asserts to `tests/test_build.c`, and check the title and a save by picture.
 
-Layers, top to bottom:
+## 5. Debugging
+
+| Switch | What it does |
+|---|---|
+| `VW_FRAME_STATS=1` | FPS and the worst frame every 5 s; the renderer adds `Native:` lines every 600 frames (lists, draws, recording ms, replay ms, GPU wait) |
+| `VW_VSYNC=0` | Uncapped. **Use it for every measurement**: KWin throttles a window it considers hidden to 20 FPS with VSync (vkcube too) |
+| `VW_NATIVE_DUMP_TRIGGER=<file>` + `VW_NATIVE_DUMP_DIR` | Touch the file: the next frame's lists as text (every command, target and shader) |
+| `VW_NATIVE_SHOT_TRIGGER=<file>` | Touch the file: the display image as PNG |
+| `VW_NATIVE_SHOT_TARGET=<hex>` (`VW_NATIVE_SHOT_ALPHA=1`) | That render target instead (its alpha as grey) |
+| `VW_NATIVE_WATCH=<hex>` | Log the first draws into that target, and why any was skipped |
+| `VW_NATIVE_WHITE=<hex>` | That texture reads as white |
+| `VW_NATIVE_LOG_TARGETS=1` | Log each new render target |
+| `VW_NATIVE_SHADERS=<dir>` | Use converted shaders from that folder as they are |
+| `VW_GNM_LOG=1` | Each PM4 packet type the command thread sees, once |
+| `VW_VK_VALIDATION=1` | Vulkan validation layers |
+| `VW_GPU_ID=<n>` | Which GPU (index in the log's list) |
+| `VW_FRAME_DUMP_TRIGGER=<file>` | The presented frame as raw BGRA (`tools/uo_pad.sh dump` turns it into PNG) |
+
+When a frame logs something new (an unknown shader, an unbound constant slot, an unhandled
+primitive), it is written as `run_uo/drive/native/report_<frame>.txt` by itself.
+
+Symptoms and where to look first:
+
+- **Black or missing**: the `Native:` lines; then the frame dump, target by target, with
+  `VW_NATIVE_SHOT_TARGET`.
+- **Scrambled texture**: detiling (`untile` in `native_vk.c`). Tile mode 13 stores each 8x8
+  micro tile in Morton order (x0 y0 x1 y1 x2 y2) for every element size; for BC formats an
+  element is a 4x4 block.
+- **Wrong colours**: RGBA8 target channel order, the BC4 swizzle, blend bits.
+- **A sprite missing in one scene**: the vertex input → buffer slot mapping is per draw (the
+  fetch shader, 4th argument of the VS hook, `gnm_fetch()`), not per shader.
+- **Hang at start or in a loading screen**: a label the game waits for was not written. Run
+  with `VW_GNM_LOG=1` and look for a new packet type; `VW_HANG_DUMP=5` shows where every guest
+  thread waits.
+- **Crash at boot in the command thread**: resolve the address with `addr2line -e out/vwport`
+  (static build, load base 0x400000).
+- **A GPU crash** prints `GPU crash: the graphics device was lost` and exits with 23.
+
+## 6. How to verify a change
+
+Verify by picture, not by "it runs". Every claim needs the image pair or the log line behind it.
+
+1. `bash tools/native/check.sh <eboot>`: build, all tests, every shader through `spirv-val`.
+2. `VW_GAME_DIR=<dump> bash tools/native/parity.sh <out> title|opening|options|load:N`: the same
+   scenario with this build and a reference build, side by side. Build the reference from the
+   commit before your change (or `0b09c1a` for the last shadPS4 renderer) with
+   `tools/native/build.sh` and copy `out/vwport` to `out/ref/vwport_shadps4` (or set
+   `VW_PARITY_REF`). Animated scenes never match exactly: look at the pictures.
+3. For speed: `tools/native/bench.sh` before and after, same machine, `VW_VSYNC=0`.
+
+What v1.6.0 was checked with (RX 560X and Vega 8, Linux, against the shadPS4 renderer):
+title, the New Game opening to the chapter 1 title card, issue #34's two saves (Ravaged Swamp
+quest, battle map, stage menu), the English patch's dialogue, French from the Switch text,
+the Options screen with Xbox icons, 720p + FSR, 4K, 21:9, 32:9, Anime4K, save thumbnails, and
+the HK 1.05 title. Performance: the opening at 60 FPS (v1.5.2: 36-54) on the RX 560X.
+
+## 7. What is left, most useful first
+
+1. **Later chapters.** Nothing past chapter 1 has been seen. Load late saves with both builds
+   (`parity.sh load:N`) and watch for `Native:` lines (`no converted`, `not handled`, `skipped`).
+2. **Windows, NVIDIA, Intel, Steam Deck.** CI builds Windows; nobody has run it there yet.
+3. **Depth and culling** are not applied (nothing seen needs them); **rect lists** (primitive
+   0x11) are not drawn; compute shaders other than the fill are not run; render targets are
+   assumed RGBA8.
+4. **CPU reads of rendered memory** other than the thumbnail path return nothing.
+5. **Long sessions**: target, texture and pipeline caches are not bounded; textures are checked
+   for new content round robin (64 MiB per frame) and never freed.
+6. **Recording** runs on the game thread (~0.6 µs per draw); replay could move to its own thread.
+7. Small cleanups found in review: the presenter's `ChooseFormat` falls back to R8G8B8A8 even
+   when the surface does not list it; the record layout is defined in two files (a shared
+   header with `offsetof` asserts would catch drift); `video_out.cpp` reads `VW_FPS_LIMIT` and
+   `VW_VBLANK_HZ` twice; `src/runtime_memory.c` still has the shadPS4-era GPU interface (page
+   tracking, write faults, `VW_TOGGLE_FILE`) that nothing uses; `RADV_DEBUG=nohiz` is still set
+   for AMD on Linux although the renderer uses no depth buffer.
+
+## 8. Rules
+
+- Never commit or ship converted game shaders, frame dumps of game content in the repository,
+  or anything from the game.
+- Kill the game with `pkill -x vwport`, never `pkill -f`; a copied reference binary has its own
+  name (`pkill -x vwport_shadps4`).
+- Don't pipe `go.sh` or `parity.sh` into another command: the game inherits the pipe and the
+  command never ends. Redirect to a file.
+- Never press Cross during narration in battle scenes when driving the game by script.
+- One change, one comparison.
+- `main` is protected: every change goes through a pull request with green Linux and Windows CI.
+
+## 9. Reference: the game's executable (v01.04, from Ghidra)
 
 | Layer | Where | Notes |
 |---|---|---|
-| Render passes | `0x3220`, `0x3390`, `0x3564` (sprites), `0x470c0`, `0x232140`-`0x252090` (post) | reached through display-list packets run by a `RenderDLThread` |
+| Render passes | `0x3220`, `0x3390`, `0x3564` (sprites), `0x470c0`, `0x232140`-`0x252090` (post) | run from display-list packets by a `RenderDLThread` |
 | Engine device layer | `0x22d00`-`0x4df80`, about 45 functions | class `FnPS4_Device`; device = `FUN_00000700()->+0x40` |
-| **Gnmx (Sony's library, statically linked)** | `0x214000`-`0x21d000` | **this is where we hook** |
+| **Gnmx (Sony's library, statically linked)** | `0x214000`-`0x21d000` | **hooked here** |
 | `sceGnm*` imports | 97 imported, 23 called | one draw call, `sceGnmDrawIndex` |
 
-Gnmx entry points identified (first argument is the graphics context unless noted; "LCUE"
-functions take `context + 0x1c8`):
+Hooked Gnmx entry points (first argument is the graphics context unless noted; LCUE functions
+take `context + 0x1c8`):
 
 | Address | Meaning |
 |---|---|
@@ -124,7 +247,7 @@ functions take `context + 0x1c8`):
 | `0x215ab0` / `0x215b10` | clip control / primitive setup |
 | `0x21c1f0` | setupScreenViewport(l, t, r, b, zscale, zoffset); also sets the scissor |
 | `0x218bf0` | LCUE setTextures(stage, slot, T#) |
-| `0x218df0` | LCUE setBuffers(stage, slot, V#) (read-only buffers) |
+| `0x218df0` | LCUE setBuffers(stage, slot, V#) |
 | `0x218fe0` | LCUE setSamplers(stage, slot, S#) |
 | `0x2191b0` | LCUE setConstantBuffers(stage, slot, V#) |
 | `0x2193a0` | LCUE setRwBuffers |
@@ -132,349 +255,51 @@ functions take `context + 0x1c8`):
 | `0x2199b0` / `0x219b50` / `0x219d00` | LCUE set VS / PS / CS |
 | `0x21be90` | submit(context) |
 | `0x21c050` | submitAndFlip(workload, handle, buffer, mode, arg, context) |
-| `0x21be50` | reset context (not hooked; the game's own) |
-| `0x215560` | allocate from the command buffer (not hooked; the game uses the memory) |
-| `0x215b70` / `0x215c50` | dmaData / fill (memory copies by the GPU) — **not hooked yet** |
-| `0x215d40`, `0x215f60`, `0x215df0`, `0x215410` | wait-on-address, end-of-pipe label write, wait for graphics writes — **not hooked yet** |
-| engine `0x3ede0` | fills memory with a compute shader: how the game clears targets (hooked) |
-| engine `0x3ebc0` | clear a render target (calls `0x3ede0` or draws a quad) |
-| engine `0x44690` / `0x44910` / `0x44a90` | texture from GNF data / empty writable texture / render target object |
+| engine `0x3ede0` | fill memory with a compute shader: how the game clears targets |
+| `0x20df20` | `GpuAddress::detileSurfaceRegion` (save thumbnails) |
 
-Shader stages are numbered 0 CS, 1 PS, 2 VS. Every hooked function starts with
-`push rbp; mov rbp, rsp; push <reg>` (5 or 6 bytes), so one generic trampoline serves all.
+Not hooked (the game's own code runs): `0x21be50` reset context, `0x215560` command buffer
+allocation, `0x215b70`/`0x215c50` dmaData/fill and the label/wait helpers `0x215d40`,
+`0x215f60`, `0x215df0`, `0x215410` (their packets reach `gnm.cpp`). Engine `0x3ebc0` clears a
+render target (calls `0x3ede0` or draws a quad); `0x44690` / `0x44910` / `0x44a90` make a
+texture from GNF data / an empty writable texture / a render target object. Shader stages are
+numbered 0 CS, 1 PS, 2 VS.
 
 Facts about the data:
 
-- **Shaders**: 1,743 in the eboot (620 VS, 1,120 PS, 3 CS), none in the CPK archives. Each is in
-  a container starting 0x24 bytes before its `Shdr` header; a table of 24-byte
-  `{pointer, size, 0}` entries at `0x1403080`-`0x1600c40` points at them. PSSL reflection names
-  follow each blob (32 constant buffer names, 152 `g_*` uniforms, vertex semantics).
-  Grouped by name signature: 358 VS and 447 PS families, mostly feature permutations of one
-  sprite shader (fog, gradient map, reflection, multi-texture, mask, dissolve) plus about 15
-  effects (aurora, mist, cloud, rain, snow, god rays, glare, heat shimmer, blur, post).
-- **Shader identity at run time**: the Gnmx shader object's word 2 `<< 8` is the code address;
-  the footer `OrbShdr` is at `(code[1] + 1) * 8` bytes; the hash is the u32 at footer + 0x10.
-  The old shader cache files are named by the same hash.
-- **Constants**: the engine binds the same data to VS and PS at a slot. Slot 0 is the matrix
-  and per-pass data, slot 1 a material colour.
-- **Vertex inputs**: every input has its own buffer slot (address + stride), even when several
-  share one interleaved stream. Plain sprites use slots 0, 1, 2 (position, colour, uv); the
-  two-key-frame sprite uses 2, 3, 4, 5 and uv on 8; the four-key-frame sprite 0..7 and uv on 8.
-- **Textures**: BC7 and BC4 (fonts) in tile mode 13; render targets are RGBA8 in tile mode 14;
-  the display buffer has tile mode 10. No mip levels seen.
-- **Title screen frame**: 5 lists (4 display-list contexts, then the main context, which
-  flips), 239 draws, 7 VS + 5 PS + 1 CS, about 150 render targets (many 256² and 512²),
-  primitive types 5 (fan) and 6 (strip), three blend values, two samplers.
+- **Shader identity**: the Gnmx shader object's word 2 `<< 8` is the code address; the footer
+  `OrbShdr` is at `(code[1] + 1) * 8` bytes; the hash is the u32 at footer + 0x10. A table of
+  24-byte `{pointer, size, 0}` entries at `0x1403080`-`0x1600c40` points at the containers. PSSL
+  reflection names follow each blob (`tools/native/analysis/names.py`). By name signature: 358 VS
+  and 447 PS families, mostly permutations of one sprite shader (fog, gradient map, reflection,
+  multi-texture, mask, dissolve) plus about 15 effects (aurora, mist, cloud, rain, snow, god
+  rays, glare, heat shimmer, blur, post).
+- **Constants**: the engine binds the same data to VS and PS at a slot: 0 common (matrix; floats
+  16.. material colour or `g_Rate`, 20..23 `g_K`, 28.. uv scale), 1 material colour, 2 fog colour
+  (PS) or multi XYWH (some VS), 3/4 god ray and glare XYWH, 6 shading colours, 8 gradient map,
+  9 gradient map parts.
+- **Vertex inputs**: every input has its own buffer slot. Plain sprites use 0, 1, 2 (position,
+  colour, uv); the two-key-frame sprite 2, 3, 4, 5 and uv on 8; the four-key-frame sprite 0..7
+  and uv on 8.
+- **Textures**: BC7 and BC4 (fonts) in tile mode 13; render targets RGBA8 in tile mode 14; the
+  display buffer tile mode 10 (the last draw is a quad list, 0x13, into it). No mip levels seen.
+  Slots: 0 main, 2 multi texture, 4 gradient map (512x2048, one palette per row) or god ray,
+  5 glare.
+- **Title screen frame**: 5 lists, ~240 draws, 7 VS + 5 PS + 1 CS, about 150 render targets
+  (many 256² and 512²), primitive types 5 (fan) and 6 (strip).
+- **Movies** are decoded by `sceVideodec2` (`src/runtime_videodec.c`) and drawn by the game with
+  its `g_TextureY`/`g_TextureV` shaders: no separate path in the renderer.
 
-## 3. Architecture chosen
+Ghidra: `tools/native/ghidra/gh.sh` drives a headless project (`UO_GHIDRA_PROJECT`, `GHIDRA_HOME`);
+the analysis scripts read the linked image from `UO_ELF` (`eboot_ghidra.elf`).
 
-Hook the Gnmx entry points and keep everything above them untouched. The engine's init, frame
-submit, allocators and display lists run as shipped; only the library that used to write
-console command buffers is replaced.
+## 10. History
 
-```
-game render passes -> engine device layer -> [hook] Gnmx entry
-                                               |-> recorder: one command list per context
-                                               '-> (transition only) the game's own Gnmx code
-submit / submitAndFlip -> lists join a frame -> native Vulkan renderer replays the frame
-```
-
-Two modes while shadPS4 is still present, selected by `VW_NATIVE`:
-
-- `trace`: record only, beside the existing renderer (statistics and frame dumps).
-- `1`: record, and draw each frame with the native renderer **off screen**, beside the
-  existing renderer, so the two images can be compared.
-
-The end state is a third mode where the game's Gnmx code is no longer called, the native
-renderer owns the window, and `gpu/shadps4` is deleted.
-
-## 4. What exists in the worktree
-
-| File | What it is | State |
-|---|---|---|
-| `src/native_gfx.h` | modes, command list format, recorder/renderer interface | done |
-| `src/native_gnm.h` | decoders for T#, V#, render target, shader header, **fetch shader** | done; all confirmed by pictures |
-| `src/native_rec.c` | hooks for 28 entries, per-context lists, frame assembly, text dump; reads each VS's fetch shader and records only the streams it reads, in input order | works |
-| `src/native_vk.c` | Vulkan 1.3 renderer (see "Renderer design" below), PNG writer, statistics | **title, logos, intro and the castle garden match the reference** |
-| `gpu/shim/native_convert.cpp` | `vwgpu_native_convert`: every VS/PS in the eboot through the recompiler's native mode (see "Shaders: converted on the player's machine") | 1726 of 1728 |
-| `tools/native/aot/shader_aot.cpp` | `shader-aot [--native] EBOOT OUT_DIR`, the converter from the command line (`ninja -C out/static shader-aot`) | works |
-| `tools/native/check.sh [n] [s]` | **the standard check**: builds, restarts, captures the title, starts New Game, captures n pairs every s seconds, writes the grid, prints new log lines | works |
-| `tools/native/{build,go,dump}.sh`, `pairs.py` | build; restart to the title menu; capture native + reference at the same moment; reference/native grid | work |
-| `tools/native/analysis/names.py HASH…` | a game shader's reflection names (uniforms, blocks, inputs) from the eboot | works |
-| `tools/native/analysis/ref.py HASH` | the old recompiler's GLSL for a shader, constants as `cN[i]` | works |
-| `tools/native/analysis/sig.py HASH…` | pixel shader feature signature (textures, overlay, x2, gradient lookups) | works |
-| `tools/native/analysis/slots.py DUMP HASH…` | constant/texture slots bound at that shader's draws | works |
-
-### Renderer design (as built)
-
-- Two frames in flight (fences), one command buffer each; no queue wait per frame.
-- Per frame, persistently mapped rings: vertex data, 32-bit indices (bound once per frame),
-  constants, **draw records** and indirect commands.
-- **One record per draw** (`Record` in `native_vk.c`, `Info::NativeLayout` in the recompiler,
-  544 bytes): per texture slot the bindless texture and sampler index; per stage and game
-  constant slot the block's GPU address; per vertex input the stream's address, stride and format. The draw's `firstInstance` is the
-  record's index; the only push constant is the records' address (set once per frame).
-- **Vertex pulling**: the converted vertex shaders fetch their own inputs in their prologue.
-  Pipelines have no vertex input state; the pipeline key is shaders, blend, mask, topology.
-  Compiled pipelines are kept in `<user>/native_shaders/pipelines.bin`.
-- **Batched draws**: each draw writes a `VkDrawIndexedIndirectCommand`; consecutive draws with
-  the same pipeline, viewport, scissor and target go out as one `vkCmdDrawIndexedIndirect`.
-- Hash maps for targets, textures and pipelines (by address / key), the last pipeline kept.
-- Images stay in `GENERAL`; one global barrier after every pass, clear and upload.
-- **Texture content check**: the game reuses memory for new content. Each frame, before
-  replay, textures are re-sampled round robin (64 bytes per 16 KiB, 64 MiB of texture per
-  frame) and a changed one is uploaded again into the same image.
-- Prefers the first discrete GPU (`VW_NATIVE_GPU=<index>` overrides).
-- Fans and quad lists (0x13) become triangle lists; rect lists (0x11) are not drawn yet.
-- When a frame logs something new (unknown shader, unbound constant slot, unhandled primitive),
-  it is dumped automatically as `run_uo/drive/native/report_<frame>.txt`.
-
-Debugging switches: `VW_NATIVE_WHITE=<addr>` (that texture reads white),
-`VW_NATIVE_WATCH=<addr>` (log draws into that target), `VW_NATIVE_SHOT_TARGET=<addr>` with
-`VW_NATIVE_SHOT_ALPHA=1` (write a target's alpha), `VW_NATIVE_PEEK=<addr>` (is game memory
-there non-zero).
-
-### Facts learned while matching pictures
-
-- Tile mode 13 (Thin_1dThin) stores each 8x8 micro tile in **Morton order** (x0 y0 x1 y1 x2 y2)
-  for every element size; micro tiles are in rows of `pitch / 8`.
-- The vertex input → buffer slot mapping is **per draw**, not per shader: the engine pairs the
-  same VS with different fetch shaders. The fetch shader is the 4th argument of the VS hook;
-  `gnm_fetch()` decodes it (`s_load_dwordx4` offset / 4 = slot, `buffer_load_format` vdata =
-  input order).
-- The final image is a quad list (0x13) into the tile-mode-10 display buffer.
-- Constant slots seen: 0 common (matrix; floats 16.. material colour or g_Rate, 20..23 g_K,
-  28.. uv scale), 1 material colour, 2 fog colour (PS) or multi XYWH (some VS), 3/4 godray and
-  glare XYWH or multi XYWH, 6 shading colours (4 corners + pos/min/rev at floats 32..35),
-  8 gradient map (x amount, y row), 9 gradient map parts, 13 unknown 48-byte block.
-- Texture slots: 0 main, 2 multi texture, 4 gradient map (512x2048, one palette per row) or
-  godray, 5 glare.
-- Pixel input locations in our GLSL follow the **semantic**, not the game's input index:
-  0 colour, 1 uv, 2 multi uv, then shading. Shaders that skip one still line up.
-- Feature order in the sprite pixel shaders: texture x colour, fill (shading rgb replaces),
-  parts gradient, multi (x2 multiply, or mix by alpha), shading overlay (by its alpha), gradient
-  map, fog.
-
-### Status (2026-11-12, session 3)
-
-- The New Game opening matches the reference in every captured pair: title, logos, intro, the
-  cavalry street (field "Curve"/"Post" shaders, rain, godray/glare composite with Post grade),
-  the castle, the garden, the location emblem (drawn once into a 256x256 target, read by
-  `bc96aaf8` with `MULTI_RECT`).
-- Replay costs ~0.5-0.8 µs per draw (2.3-3.0 ms for ~4,000 draws); recording adds ~0.6 µs per
-  draw on the game thread.
-- **`VW_NATIVE=own` works** (Step 4, first part): the hooks record and no longer run the
-  game's graphics code; shadPS4 only processes what is left (synchronisation, labels, flips).
-  The native renderer shares the presenter's `VkDevice` and queue (`vwgpu_vulkan_handles`,
-  submits under `Scheduler::submit_mutex`), copies its display image at each flip into one
-  of four present images, and `Presenter::PrepareFrame` samples that image
-  (`native_present_image`, by display-buffer address) instead of its own. FSR, Anime4K, the
-  overlay and the settings menu keep working, since they run after that point.
-- **Result** (`tools/native/bench.sh`, RX 560X laptop, New Game opening, 60 s, vsync off,
-  60 Hz vblank): shadPS4 renderer 36-55 FPS (most windows 51-54); native owning the frame
-  **60.0 FPS** in every window after loading. The game limits itself to 60: with
-  `VW_VBLANK_HZ=240` both show 60, so headroom has to be read from frame costs, not FPS.
-- **Shaders**: hand-written and hand-converted shaders (programs.txt, ref2native.py, match.py)
-  are retired; every shader is converted at start, see "Shaders: converted on the player's
-  machine" below.
-- Not yet checked in own mode: battles beyond the tutorial map,
-  the world map, text entry. CPU reads of GPU-rendered memory other than through
-  detileSurfaceRegion (the save thumbnail path) still see nothing.
-
-## 5. Working loop
-
-```sh
-cd ~/unicorn_overlord_pc_native
-bash tools/native/check.sh 5 5           # build, run, grid in run_uo/drive/native/pairs.png
-NATIVE_MODE=own bash tools/native/check.sh 5 5   # the same with the native renderer owning the frame
-bash tools/native/bench.sh own 60        # FPS of the opening (0: shadPS4 alone, 1: both)
-python3 -I tools/native/analysis/names.py <hash>     # what the shader is
-python3 -I tools/native/analysis/sig.py <hash>       # pixel shader features
-python3 -I tools/native/analysis/ref.py <hash>       # the maths, if the above is not enough
-python3 -I tools/native/analysis/slots.py run_uo/drive/native/report_N.txt <hash>   # its slots
-rm -rf run_uo/user/native_shaders        # or bump CONVERTER_VERSION: reconvert after emitter changes
-pkill -x vwport                          # never pkill -f
-```
-
-- Do not pipe `go.sh` or `check.sh` into another command: the game inherits the pipe and the
-  command never ends. Redirect to a file or `/dev/null`.
-- `VW_NATIVE_SHOT_TARGET=<hex address>` writes one render target instead of the display image.
-- Reference GLSL comes from the old path's shader cache (`run_uo/user/cache/CUSA36381`), a
-  development aid only.
-- Build environment: the shell exports a foreign clang toolchain; `tools/native/build.sh`
-  removes it. Use `/usr/bin/python3` for analysis scripts.
-
-## 6a. Performance rules (apply from step 1, measure from step 2)
-
-The point of going native is to remove work, so the renderer must not grow the costs the
-emulator had. Keep these from the start rather than optimising later:
-
-- **Record cheaply.** Hooks append fixed-size records to a per-context array; no allocation,
-  hashing or Vulkan calls on the game's thread per draw.
-- **No GPU wait per frame.** Two or three frames in flight with fences; never `vkQueueWaitIdle`
-  or `vkDeviceWaitIdle` outside resize/shutdown.
-- **One upload ring per frame**: a persistently mapped host-visible buffer for vertex, index
-  and constant data, sub-allocated linearly; constants bound by dynamic offset, not one buffer
-  or descriptor set per draw.
-- **Descriptors**: one bindless texture/sampler array (descriptor indexing) indexed by a push
-  constant, or push descriptors; no `vkAllocateDescriptorSets` per draw.
-- **Pipelines**: cached by a small packed key (shader pair, blend, primitive, target format,
-  depth state); dynamic state for viewport, scissor, cull, depth test/write
-  (`VK_EXT_extended_dynamic_state`), so the cache stays small. Build them at load or on a worker,
-  never stall a frame on compilation when avoidable.
-- **Merge consecutive draws** with the same pipeline and textures where the game issues many
-  small quads (sprites); this is the main win over a PM4 translator, which cannot see intent.
-- **Render passes**: one dynamic-rendering scope per target run, not per draw; skip
-  load/store of targets that are fully cleared or never read.
-- **Replay on a render thread** (step 4) so the game thread only records.
-- **Measure** with a `Native: frame` statistics line (record µs, replay µs, draws, merged
-  draws, pipelines, upload KiB) and compare against the baseline above at each step.
-
-## 6. Steps, in order
-
-Each step ends with a check. Do not move on while a check fails.
-
-### Step 1. Title screen matches (done 2026-11-12)
-
-1. Run `go.sh 1`, `dump.sh`, and read the native PNG next to the reference PNG.
-2. Expect problems in this order, and fix them one at a time:
-   - **Nothing or black**: check `Native:` lines in `run_uo/drive/game.log`; dump single targets
-     with `VW_NATIVE_SHOT_TARGET` following the target order in the frame dump.
-   - **Scrambled textures**: the untile routine (`untile` in `native_vk.c`) assumes tile mode 13
-     is 8×8-element tiles in rows; for BC formats an element is a 4×4 block. Confirm against
-     one texture.
-   - **Upside down or mirrored**: viewport y direction (`draw` uses a negative height).
-   - **Wrong colours**: channel order of RGBA8 targets, the BC4 swizzle (`4001`), blend bits.
-   - **Missing sprites**: slot mapping of `sprite_lerp.vert` (2, 3, 4, 5, 8 is inferred from
-     the engine code, not yet confirmed), fan-to-list conversion, skipped draws.
-3. Depth is ignored so far: draws with a zero colour mask are skipped and no depth test runs.
-   If the title looks right without it, leave depth for step 3.
-
-**Check**: the native title image matches the reference by eye, and `skipped` is 0 except for
-the depth-clear draw.
-
-### Step 2. Cover the game's shaders (done 2026-11-12)
-
-Replaced by conversion at start (the recompiler's native mode). A shader missing at run time
-prints `no converted … shader <hash>` once.
-
-### Step 3. Complete the state
-
-- Depth: depth targets (`NC_DEPTH_TARGET`, format from the z-info word), depth test and write
-  from `NC_DEPTH_CONTROL`, the depth clear draw, `NC_DEPTH_CLEAR`.
-- Primitive setup (culling), clip control, colour buffer control modes other than normal,
-  second texture slot users, compute dispatches other than the fill.
-- Texture lifetime: textures are cached by address and never invalidated. Hook the engine's
-  texture creation and release (`0x44690`, `0x44910` and the frees they call) to drop cache
-  entries; find how dynamic textures (font cache, movie frames `g_TextureY`/`g_TextureV`) are
-  updated and re-upload on that event.
-- Render target release and resize (the heap is reused when the render size changes).
-
-**Check**: movies, text entry, a save/load round trip and a render-resolution change all look
-right.
-
-### Step 4. Own the frame
-
-1. Add a mode where the hooks **do not call the game's Gnmx code**. Keep calling
-   `0x215560` (allocation) and `0x21be50` (reset) as they are.
-2. Hook the GPU sync entries (`0x215d40`, `0x215f60`, `0x215df0`, `0x215410`, `0x215b70`,
-   `0x215c50`) and perform their memory effects ourselves when a list is submitted: the engine
-   waits on labels the GPU would have written.
-3. Replace `sceGnmSubmit*`, `sceGnmSubmitDone`, flip and vblank events, and the VideoOut calls
-   with small native versions (`src/runtime_*.c` style). The engine registers its display
-   buffers through `sceVideoOutRegisterBuffers` in `0x3cb60`.
-4. Give the native renderer the window: SDL3 surface, swapchain, present on flip, vsync and
-   frame pacing, then move the overlay and the settings menu (`gpu/shim/vw_overlay.cpp`) onto
-   it.
-5. Move rendering off the game's thread (a render thread that takes whole frames) and replace
-   the per-draw descriptor sets and `vkQueueWaitIdle` with something that scales.
-
-**Check**: the game runs with `gpu/shadps4` not initialised at all, and the New Game opening
-runs uncapped (`VW_VSYNC=0`) **faster than the 51-52 FPS baseline** on the RX 560X, ideally
-well above 60. The light scene must also be faster than the shadPS4 build's uncapped figure
-(measure that baseline on `unicorn/main` first and record it here).
-
-### Step 5. Remove shadPS4
-
-Delete `gpu/shadps4`, `gpu/third_party/{sirit,gcn,xbyak,…}` that only it used, the pipeline
-cache and shader cache code, and the settings that no longer mean anything (async shaders,
-readback options). Update `README.md`, `packaging/notices.py` and the licence notes. Port the
-remaining features that lived in the old renderer: render scale, ultrawide, FSR1/RCAS,
-Anime4K, frame dumps used by the drive scripts, GPU profiling.
-
-**Check**: Linux and Windows CI build and package without `gpu/shadps4`; a full prologue run
-matches the last reference images.
-
-## 7. Risks and open questions
-
-- **Shader coverage**: normal play had used only 137 of the 1,731 distinct shaders. Shaders
-  nobody has triggered cannot be compared against a reference picture; they need a careful read
-  of their code or a scene that uses them before step 5.
-- **Reading the originals** needs a GCN disassembly. Today that comes from the old recompiler's
-  output. The owner should decide whether keeping that as an offline development tool is
-  acceptable once the code is gone from the port.
-- **Hong Kong 1.05 and Windows**: untested. Windows needs nothing new for the hooks (they are
-  `sysv_abi` functions like the existing ones), but the renderer has only been built on Linux.
-- **Performance is unmeasured.** Recording costs about 0.02 ms per frame on the title screen;
-  the renderer currently waits for the GPU every frame and is not representative.
-- **Per-draw vertex copies** are sized from the highest index. Large batches have not been
-  seen yet; check the `KiB copied` statistic in battles.
-- **Texture memory**: BC7 4096² textures are uploaded whole (16 MiB each) and never freed.
-
-## 8. Rules for whoever continues
-
-- Verify by picture, not by "it runs". Every claim in a status report needs the image pair or
-  the log line behind it.
-- One change, one comparison. The frame dump tells you which draw produced which target.
-- Do not commit or push without the owner asking; `main` is protected and work goes through
-  pull requests. Commit with the noreply author address noted in the project memory.
-- Kill the game with `pkill -x vwport`. Never press Cross during narration in battle scenes.
-
-## Shaders: converted on the player's machine (2026-11-12)
-
-No game-derived shader ships. At start, `native_render_init` → `shaders_prepare` converts every
-vertex and pixel shader in the dump's `eboot.bin` into `<user>/native_shaders/<hash>.spv` with
-`vwgpu_native_convert` (gpu/shim/native_convert.cpp, about 2 s, 1726 of 1728; e041714c and
-546af9ea have no container found). A `stamp` file (converter version, eboot size and mtime) skips
-it on later starts; bump `CONVERTER_VERSION` in native_vk.c when the emitter output changes.
-`VW_NATIVE_SHADERS=<dir>` uses a folder as it is. `shader-aot [--native] EBOOT OUT_DIR` runs the
-same converter from the command line (without --native: the old bindings, to compare with the
-runtime cache; identical apart from the SPIR-V version, 1.6).
-
-The recompiler's native mode (`Profile::native_renderer`, `Info::NativeLayout`):
-- record index: VS `gl_InstanceIndex` (firstInstance), passed flat at location 15; made
-  wave-uniform with subgroupBroadcastFirst (a wave never mixes draws), so record, constant and
-  descriptor accesses are scalar;
-- constant buffers: physical storage buffer pointers from the record, by game slot
-  (`block[stage][slot]`), aligned loads; the unused clip-planes buffer is dropped;
-- textures: `texture2D[]` / `sampler[]` (set 0, bindings 0/1) indexed by the record's slot word;
-- vertex inputs: pulled from `stream[n]` in the prologue (formats 1-4 floats, 5 unorm8x4);
-- outputs at semantic - 15 on both sides.
-Survey of all 1726: no push-constant reads, only sampled 2D float images, no buffer writes.
-All pass `spirv-val --target-env vulkan1.3`.
-
-The record is 544 bytes: `slot[8]` @0, `block[2][16]` @32, `stream[16]` @288 (Record in
-native_vk.c, `Info::NativeLayout`). The retired hand-shader files were moved out of the tree.
-
-Verified: title menu and the opening rain scene match the reference by picture. 2026-11-13
-`tools/uo_story.sh` in own mode on converted shaders: prologue to the chapter 1 title card, no
-missing shader or warning, 59.2 FPS average (shadPS4 alone 54.5), lowest 5 s window 38.2; all
-checkpoints match the reference apart from timing.
-
-Save thumbnails (2026-11-13): the game makes them on the CPU, `FnThumbCapture` (0x357cc →
-0x34dc0) detiles a 280x180 render target with the statically linked
-`GpuAddress::detileSurfaceRegion` (0x20df20) and JPEG-encodes it. Own mode hooks 0x20df20: a
-source that is a native target is read back from its image (`native_target_read`, once per
-target and frame, in the target's comp_swap byte order); anything else runs the game's code.
-Thumbnails now show in own mode; in shadPS4 mode they are black (its deferred/stale readback
-options), also before this work. `VW_NATIVE_LOG_TARGETS=1` logs each new render target.
-
-Intro and boot sequence (crest, painted scenes, title) render in own mode; no video decoder use
-seen there, so movies are not a separate problem so far.
-
-Vega 8 (`VW_GPU_ID=0`, 2026-11-13, opening, vsync off): native 46-52 FPS in the first 25 s, then
-59-60 in the rain scene; shadPS4 38-46, then 51-59. Pictures match.
-Open: on 2026-11-12 from about 23:00 every mode (shadPS4 alone too) ran at 19.7 FPS with the dGPU
-100% busy even at the title, PCIe link stuck at 2.5 GT/s x8; at 22:31 the same build of mode 0 ran
-60. Environmental; benchmarks are meaningless until that is fixed (reboot or force the PCIe DPM
-level as root).
+- 2026-11-12: hooks and recorder; replay beside shadPS4 for comparison; then "own" mode (the
+  hooks stop calling Gnmx) shared shadPS4's device and beat it (60 vs 36-54 FPS in the opening).
+- 2026-11-13: own GCN → SPIR-V translator (decoder opcode-identical to shadPS4's over 422,968
+  instructions, all 1726 shaders through `spirv-val`); own Vulkan device, presenter and overlay;
+  own GnmDriver, VideoOut and event queues without PM4 emulation; shadPS4 deleted; HK 1.05
+  mapped; feature parity checked against v1.5.2; released in v1.6.0 as experimental.
+- Notes of the shadPS4 era (the threaded draw pipeline, readback options) are in git history
+  before v1.6.0 (`docs/dev/parallel_gpu.md`).

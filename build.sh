@@ -11,7 +11,7 @@ MINGW*|MSYS*)
     for tool in clang cmake ninja pkg-config; do
         command -v "$tool" >/dev/null || { echo "Need $tool from MSYS2 CLANG64 (packaging/windows/README.md)." >&2; exit 1; }
     done
-    if [[ ! -f gpu/third_party/imgui/imgui.h || ! -f gpu/third_party/xbyak/xbyak/xbyak.h ]]; then
+    if [[ ! -f gpu/third_party/imgui/imgui.h ]]; then
         git submodule update --init --recursive
     fi
     # --static (packaging): FFmpeg, SDL3 and the others from packaging/deps.sh, linked in.
@@ -57,7 +57,7 @@ if ! { command -v pkg-config >/dev/null && pkg-config --exists vulkan sdl3 && co
 fi
 read -r -a includes <<< "$(pkg-config --cflags vulkan sdl3 libavcodec libavutil libswscale)"
 read -r -a libraries <<< "$(pkg-config --libs --static vulkan sdl3 libavcodec libavutil libswscale)"
-# GPU library (shadPS4 video core + drivers), built by CMake into out/gpu/libvwgpu.so.
+# GPU library (gpu/platform: window, Vulkan device, presenter, Gnm/VideoOut), built by CMake into out/gpu/libvwgpu.so.
 # VW_PGO: generate (instrumented build that writes pgo/ while the game runs), use, off.
 # Default: use the profile in pgo/ when there is one. VW_LTO=OFF disables link-time optimization.
 pgo=${VW_PGO:-}
@@ -138,6 +138,8 @@ if [[ ${1:-} == --test ]]; then
     out/ultrawide-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -Isrc tests/test_build.c -o out/build-test
     out/build-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -Isrc tests/test_native_shader.c src/native_shader.c src/native_shader_spirv.c -o out/native-shader-test
+    out/native-shader-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -Isrc tests/test_render_targets.c -o out/render-targets-test
     out/render-targets-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -Isrc tests/test_text_wrap.c -o out/text-wrap-test

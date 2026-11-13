@@ -35,15 +35,17 @@ Thanks for helping. This file says what a change needs before it can go in.
 4. For anything that changes what the game does: play the affected part and say how far you
    got (title, menu, prologue, first battle, save and load).
 5. For performance changes: give before/after numbers from the same scene on the same machine
-   (FPS and the stage A/B µs per draw from the overlay or `tools/ab.sh`). "Feels faster" is
+   (FPS from `VW_FRAME_STATS=1 VW_VSYNC=0`, e.g. `tools/native/bench.sh`, and the renderer's
+   `Native:` statistics lines: recording ms, replay ms, GPU wait). "Feels faster" is
    not a measurement.
 
 ## Code style
 
 - Match the code around you: naming, comment density, brace style. C is C11, C++ follows the
-  shadPS4 code it lives in, Python is plain standard library.
+  code around it (`gpu/platform/`: 4-space indent, `PascalCase` functions), Python is plain
+  standard library.
 - Comments say *why*, not *what*. Name the source when behaviour comes from elsewhere
-  (shadPS4 file, a firmware library, a Ghidra address like `FUN_0003fa20`).
+  (a firmware library, a Ghidra address like `FUN_0003fa20`, a GCN ISA manual section).
 - Prefer the smallest change at the root cause. A guard in the shared function beats a guard
   in every caller.
 - Before writing a stub for a missing import: check whether it only lacks a name
@@ -137,14 +139,14 @@ Use the bug report template. The most useful report has:
 | `--check-imports` | Every system function the game would stop at, without running it |
 | `VW_HANG_DUMP=<seconds>` | Where every guest thread is, at that interval |
 | `VW_STRICT_HANDLES=1` | Reports any closed or invalid handle that is used |
-| `VW_GPU_LOG=trace\|debug\|info` | GPU library log level (default warning) |
 | `VW_PAD_RECORD` / `VW_PAD_REPLAY` | Record and replay input, for bugs that need a route to reach |
 | `VW_PAD_FILE` | Drive the pad from a file (scripted runs, `tools/press.sh`) |
-| `VW_RELAXED_FLOAT=0\|1` | Fragment shaders without strict float modes (default: on for AMD's Windows driver only, #74) |
 | `VW_FRAME_DUMP_TRIGGER=<file>` | Touch the file to dump the next frame as raw BGRA pixels to `VW_DUMP_DIR` (default `out/dump`) |
-| `tools/ab.sh` | A/B toggle in one run with FPS and per-draw stage timings |
-| `perf` | User-space profiling of `out/vwport` and `out/gpu/libvwgpu.so` |
+| `tools/native/check.sh [eboot]` | Every check that needs no game window: build, all tests, every game shader through `spirv-val` |
+| `tools/native/parity.sh` | The same scenario with this build and a reference build, frames side by side |
+| `VW_FRAME_STATS=1` | FPS and the worst frame every 5 s; with `VW_VSYNC=0` for measuring (see the 20 FPS note in `docs/dev/NATIVE_RENDERER.md`) |
+| `perf` | User-space profiling of `out/vwport` |
 
-Background on the GPU pipeline is in `docs/dev/parallel_gpu.md`; the port's state, open
-problems and lessons are in `docs/dev/unicorn/HANDOFF.md` and `docs/dev/CLEANUP_HANDOFF.md`.
-Read the handoff before starting on performance work: several approaches were tried and rejected there.
+Graphics work starts at `docs/dev/NATIVE_RENDERER.md` (the renderer, its tools in
+`tools/native/README.md`, and what is left). The port's history and lessons are in
+`docs/dev/unicorn/HANDOFF.md`.

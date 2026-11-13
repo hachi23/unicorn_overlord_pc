@@ -1,28 +1,16 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* The native renderer: the game's calls into its graphics library are taken at the library's
- * entry points and drawn with Vulkan directly, without the console's command buffers.
- *
- * VW_NATIVE (else renderer= in vw.ini, the overlay's "Renderer"):
- *   own, native  the native renderer draws and presents the frame; the game's graphics library
- *                calls are not run (what players switch on)
- *   trace        record the calls beside shadPS4 (frame lists, statistics)
- *   1            as trace, and also draw the recorded frames natively (comparison)
- *   0, shadps4   off (the default) */
+ * entry points and drawn with Vulkan directly, without the console's command buffers. */
 #ifndef NATIVE_GFX_H
 #define NATIVE_GFX_H
 #include <stddef.h>
 #include <stdint.h>
 
-enum { NATIVE_OFF = 0, NATIVE_TRACE = 1, NATIVE_DRAW = 2 };
-
-/* Sets the mode from the text above (the probe, before native_gfx_install). */
-void native_gfx_select(const char *text);
-/* NATIVE_OFF, NATIVE_TRACE or NATIVE_DRAW. */
-int native_gfx_mode(void);
 /* Hooks the graphics library of the loaded v01.04 image. stubs: zeroed writable memory within
  * rel32 reach of the image, made executable by the caller afterwards. 0 when the image's code
  * is not what the hooks expect (nothing is changed then). */
-int native_gfx_install(unsigned char *image, unsigned char *stubs, size_t stub_bytes);
+/* address: where a v01.04 image offset is in the running build (unicorn_address), 0 when unknown. */
+int native_gfx_install(unsigned char *image, unsigned char *stubs, size_t stub_bytes, uint32_t (*address)(uint32_t));
 
 /* ---- A recorded frame: lists of commands in the order the game submitted them. ---- */
 enum {
@@ -92,7 +80,7 @@ typedef struct NativeList {
 /* A frame's lists, oldest first; the renderer owns them and frees them with native_list_free. */
 void native_render_frame(NativeList *lists);
 int native_render_init(void);
-/* The CPU reads a render target the native renderer drew (VW_NATIVE=own: the game detiles it
+/* The CPU reads a render target the native renderer drew (the game detiles it
  * itself, e.g. for save thumbnails): copies columns left..right-1 of rows top..bottom-1 to out
  * (pitch pixels per row) in the target's byte order, as of the last replayed frame. Returns 0
  * when address is not such a target. Any thread. */

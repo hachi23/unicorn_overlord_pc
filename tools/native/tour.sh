@@ -1,12 +1,12 @@
 #!/bin/bash
-# tour.sh MODE MOVE OUT_DIR [steps...]: open Load Game from the title menu with VW_NATIVE=MODE,
-# move MOVE rows from where the list opens (the last slot saved; negative: up; the list
-# wraps), load, then run each step (a tools/uo_pad.sh token string) and capture a frame after it
-# into OUT_DIR/NN.png. The same steps with mode 0 and own give comparable pictures.
+# tour.sh MOVE OUT_DIR [steps...]: open Load Game from the title menu, move MOVE rows from where
+# the list opens (the last slot saved; negative: up; the list wraps), load, then run each step (a
+# tools/uo_pad.sh token string) and capture a frame after it into OUT_DIR/NN.png. The same steps
+# with VW_PROBE=<another build> give comparable pictures.
 cd "$(dirname -- "$0")/../.." || exit 1
-mode=$1 move=$2 out=$3; shift 3
+move=$1 out=$2; shift 2
 mkdir -p "$out"
-bash tools/native/go.sh "$mode" >/dev/null 2>&1
+bash tools/native/go.sh >/dev/null 2>&1
 pad() { bash tools/uo_pad.sh "$*" >/dev/null; }
 pad "down wait600 down wait600 cross wait4000"
 key=down; (( move < 0 )) && key=up move=$((-move))

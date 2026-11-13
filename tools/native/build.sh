@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds the native-renderer worktree (static) and installs out/vwport. Prints errors only.
+# Static build (out/static) installed as out/vwport, without the foreign toolchain the shell may
+# export (CC, CXX, CMAKE_SYSROOT, LDFLAGS, retcomm in PATH). Prints errors only.
 cd "$(dirname -- "$0")/../.." || exit 1
 P=$(echo "$PATH" | tr ':' '\n' | grep -v retcomm | paste -sd:)
 if env -u CC -u CXX -u CMAKE_SYSROOT -u LDFLAGS PATH="$P" bash build.sh --static > out/nb.log 2>&1; then

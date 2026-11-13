@@ -17,7 +17,7 @@ on Linux so far: report the first error of `out/deps/<library>.log` or `out/gpu-
    ```
 
    It installs the packages, builds the static libraries (`packaging/deps.sh`: FFmpeg, SDL3,
-   fmt, Zydis, xxHash, zlib; a few minutes the first time), links them and libc++ into
+   zlib; a few minutes the first time), links them and libc++ into
    `out/vwport.exe` (`bash build.sh --static`) and writes `dist/<Title> PC/` and its .zip: the
    start program, `_internal/` (its Python runtime, the runtime scripts and `vwport.exe`),
    `LICENSE` and `licenses/`. Any DLL vwport still loads from MSYS2 goes into `_internal/` too.

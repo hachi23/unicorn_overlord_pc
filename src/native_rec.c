@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Records the game's calls into its statically linked graphics library (Unicorn Overlord
- * v01.04, image offsets 0x214000-0x21d000) as lists of commands, one list per graphics
+ * v01.04 image offsets 0x214000-0x21d000; the Hong Kong 1.05 build has them moved, see
+ * src/unicorn_build.h) as lists of commands, one list per graphics
  * context, handed over in the order the game submits them. See native_gfx.h. */
 #define _GNU_SOURCE
 #include <inttypes.h>
@@ -13,23 +14,9 @@
 #include "native_gnm.h"
 #include "runtime.h"
 
-static int mode;
-/* VW_NATIVE=own: the native renderer owns the frame. The hooks record and do not run the game's
- * own graphics code, so the command buffers it submits keep only what the hooks do not cover
+/* The native renderer owns the frame: the hooks record and do not run the game's own graphics
+ * code, so the command buffers it submits keep only what the hooks do not cover
  * (synchronisation, labels, flips); the presenter shows the native image. */
-static int own;
-
-void native_gfx_select(const char *text) {
-    own = 0;
-    if (!text || !*text || !strcmp(text, "0") || !strcmp(text, "shadps4")) mode = NATIVE_OFF;
-    else if (!strcmp(text, "trace")) mode = NATIVE_TRACE;
-    else if (!strcmp(text, "own") || !strcmp(text, "native")) mode = NATIVE_DRAW, own = 1;
-    else mode = NATIVE_DRAW;
-}
-
-int native_gfx_mode(void) {
-    return mode;
-}
 
 /* ---- Lists ---- */
 enum { CONTEXTS = 64, LCUE_OFFSET = 0x1c8 };
@@ -136,73 +123,60 @@ static NativeList *of_context(void *context) { return list_of((uint64_t)(uintptr
 
 static ABI void hook_target_mask(void *c, uint32_t mask) {
     emit_words(of_context(c), NC_TARGET_MASK, &mask, 1);
-    if (!own) game_target_mask(c, mask);
 }
 static ABI void hook_blend(void *c, int slot, uint32_t bits) {
     const uint32_t w[2] = {(uint32_t)slot, bits};
     emit_words(of_context(c), NC_BLEND, w, 2);
-    if (!own) game_blend(c, slot, bits);
 }
 static ABI void hook_cb_control(void *c, uint32_t m, uint32_t rop) {
     const uint32_t w[2] = {m, rop};
     emit_words(of_context(c), NC_CB_CONTROL, w, 2);
-    if (!own) game_cb_control(c, m, rop);
 }
 static ABI void hook_depth_control(void *c, uint32_t bits) {
     emit_words(of_context(c), NC_DEPTH_CONTROL, &bits, 1);
-    if (!own) game_depth_control(c, bits);
 }
 static ABI void hook_depth_clear(void *c, float value) {
     uint32_t w;
     memcpy(&w, &value, 4);
     emit_words(of_context(c), NC_DEPTH_CLEAR, &w, 1);
-    if (!own) game_depth_clear(c, value);
 }
 static ABI void hook_db_render(void *c, uint32_t bits) {
     emit_words(of_context(c), NC_DB_RENDER, &bits, 1);
-    if (!own) game_db_render(c, bits);
 }
 static ABI void hook_depth_target(void *c, const void *target) {
     uint32_t *p = emit(of_context(c), NC_DEPTH_TARGET, 8 + 48);
     p[0] = target != NULL; p[1] = 0;
     if (target) memcpy(p + 2, target, 48); else memset(p + 2, 0, 48);
-    if (!own) game_depth_target(c, target);
 }
 static ABI void hook_target(void *c, uint32_t slot, const void *target) {
     uint32_t *p = emit(of_context(c), NC_TARGET, 8 + 64);
     p[0] = slot; p[1] = target != NULL;
     if (target) memcpy(p + 2, target, 64); else memset(p + 2, 0, 64);
-    if (!own) game_target(c, slot, target);
 }
 static ABI void hook_prim_type(void *c, uint32_t type) {
     emit_words(of_context(c), NC_PRIM_TYPE, &type, 1);
-    if (!own) game_prim_type(c, type);
 }
 static ABI void hook_index_size(void *c, uint32_t size, uint32_t policy) {
+    (void)policy;
     NativeList *list = of_context(c);
     list->index_bytes = size ? 4 : 2;
     emit_words(list, NC_INDEX_SIZE, &size, 1);
-    if (!own) game_index_size(c, size, policy);
 }
 static ABI void hook_scissor(void *c, uint32_t l, int t, uint32_t r, int b) {
     const uint32_t w[4] = {l, (uint32_t)t, r, (uint32_t)b};
     emit_words(of_context(c), NC_SCISSOR, w, 4);
-    if (!own) game_scissor(c, l, t, r, b);
 }
 static ABI void hook_clip(void *c, uint32_t bits) {
     emit_words(of_context(c), NC_CLIP, &bits, 1);
-    if (!own) game_clip(c, bits);
 }
 static ABI void hook_prim_setup(void *c, uint32_t bits) {
     emit_words(of_context(c), NC_PRIM_SETUP, &bits, 1);
-    if (!own) game_prim_setup(c, bits);
 }
 static ABI void hook_viewport(void *c, uint32_t l, uint32_t t, int r, int b, float zs, float zo) {
     uint32_t w[6] = {l, t, (uint32_t)r, (uint32_t)b, 0, 0};
     memcpy(w + 4, &zs, 4);
     memcpy(w + 5, &zo, 4);
     emit_words(of_context(c), NC_VIEWPORT, w, 6);
-    if (!own) game_viewport(c, l, t, r, b, zs, zo);
 }
 static void record_texture(void *l, uint32_t stage, uint32_t slot, const void *t, uint32_t rw) {
     uint32_t *p = emit(of_lcue(l), NC_TEXTURE, 16 + 32);
@@ -211,19 +185,16 @@ static void record_texture(void *l, uint32_t stage, uint32_t slot, const void *t
 }
 static ABI void hook_textures(void *l, uint32_t stage, uint32_t slot, const void *t) {
     record_texture(l, stage, slot, t, 0);
-    if (!own) game_textures(l, stage, slot, t);
 }
 static ABI void hook_buffers(void *l, uint32_t stage, uint32_t slot, const void *b) {
     uint32_t *p = emit(of_lcue(l), NC_RW_BUFFER, 16 + 16);
     p[0] = stage; p[1] = slot; p[2] = b != NULL; p[3] = 1; /* read only */
     if (b) memcpy(p + 4, b, 16); else memset(p + 4, 0, 16);
-    if (!own) game_buffers(l, stage, slot, b);
 }
 static ABI void hook_samplers(void *l, uint64_t stage, uint32_t slot, const void *s) {
     uint32_t *p = emit(of_lcue(l), NC_SAMPLER, 16 + 16);
     p[0] = (uint32_t)stage; p[1] = slot; p[2] = s != NULL; p[3] = 0;
     if (s) memcpy(p + 4, s, 16); else memset(p + 4, 0, 16);
-    if (!own) game_samplers(l, stage, slot, s);
 }
 static ABI void hook_constants(void *l, uint32_t stage, uint32_t slot, const void *b) {
     NativeList *list = of_lcue(l);
@@ -236,13 +207,11 @@ static ABI void hook_constants(void *l, uint32_t stage, uint32_t slot, const voi
     memcpy(p + 4, &buffer.address, 8);
     if (bytes) memcpy(p + 6, (const void *)(uintptr_t)buffer.address, bytes);
     __atomic_add_fetch(&stat_bytes, bytes, __ATOMIC_RELAXED);
-    if (!own) game_constants(l, stage, slot, b);
 }
 static ABI void hook_rw_buffers(void *l, uint64_t stage, uint32_t slot, const void *b) {
     uint32_t *p = emit(of_lcue(l), NC_RW_BUFFER, 16 + 16);
     p[0] = (uint32_t)stage; p[1] = slot; p[2] = b != NULL; p[3] = 0;
     if (b) memcpy(p + 4, b, 16); else memset(p + 4, 0, 16);
-    if (!own) game_rw_buffers(l, stage, slot, b);
 }
 static ABI void hook_vertex_buffers(void *l, uint32_t stage, uint32_t slot, int count, const void *b) {
     if (stage == GNM_STAGE_VS) {
@@ -256,7 +225,6 @@ static ABI void hook_vertex_buffers(void *l, uint32_t stage, uint32_t slot, int 
             }
         }
     }
-    if (!own) game_vertex_buffers(l, stage, slot, count, b);
 }
 static void record_shader(void *l, uint32_t op, const void *shader) {
     uint64_t *p = emit(of_lcue(l), op, 24);
@@ -267,6 +235,7 @@ static void record_shader(void *l, uint32_t op, const void *shader) {
     p[2] = (uint64_t)s.size | ((uint64_t)s.hash << 32);
 }
 static ABI void hook_vs(void *l, const void *shader, uint64_t modifier, uint64_t fetch, void *table) {
+    (void)modifier, (void)table;
     record_shader(l, NC_VS, shader);
     NativeList *list = of_lcue(l);
     GnmFetch f;
@@ -294,20 +263,20 @@ static ABI void hook_vs(void *l, const void *shader, uint64_t modifier, uint64_t
                           f.input[i].vgpr, f.input[i].components);
         puts(text);
     }
-    if (!own) game_vs(l, shader, modifier, fetch, table);
 }
 static ABI void hook_ps(void *l, const void *shader, void *table) {
+    (void)table;
     record_shader(l, NC_PS, shader);
-    if (!own) game_ps(l, shader, table);
 }
 static ABI void hook_cs(void *l, const void *shader, void *table) {
+    (void)table;
     record_shader(l, NC_CS, shader);
-    if (!own) game_cs(l, shader, table);
 }
 
 /* A draw: the indices and the part of every bound vertex stream they reach are copied, since
  * the game reuses that memory before the renderer gets to the list. */
 static ABI void hook_draw_index(void *c, uint32_t count, const void *indices, int flags) {
+    (void)flags;
     const uint64_t start = now_ns();
     NativeList *list = of_context(c);
     const uint32_t index_bytes = list->index_bytes;
@@ -387,20 +356,19 @@ static ABI void hook_draw_index(void *c, uint32_t count, const void *indices, in
     ++list->draws;
     __atomic_add_fetch(&stat_bytes, bytes, __ATOMIC_RELAXED);
     __atomic_add_fetch(&stat_ns, now_ns() - start, __ATOMIC_RELAXED);
-    if (!own) game_draw_index(c, count, indices, flags);
 }
 static ABI void hook_dispatch(void *c, uint32_t x, uint32_t y, uint32_t z, int flags) {
+    (void)flags;
     const uint32_t w[3] = {x, y, z};
     emit_words(of_context(c), NC_DISPATCH, w, 3);
-    if (!own) game_dispatch(c, x, y, z, flags);
 }
 /* The game clears memory (render targets, mostly) with a compute shader that writes a value. */
 static ABI void hook_fill(uint64_t unused, void *c, uint64_t address, int words, const uint32_t *value, int values) {
+    (void)unused;
     uint32_t *p = emit(of_context(c), NC_FILL, 24);
     memcpy(p, &address, 8);
     p[2] = (uint32_t)words; p[3] = (uint32_t)values;
     p[4] = value ? value[0] : 0; p[5] = value && values > 1 ? value[1] : 0;
-    if (!own) game_fill(unused, c, address, words, value, values);
 }
 
 /* ---- Frames ---- */
@@ -541,11 +509,7 @@ static void submit_list(void *c, int flip) {
     }
     NativeList *lists = frame_head;
     frame_head = frame_tail = NULL;
-    if (mode == NATIVE_DRAW) {
-        native_render_frame(lists);
-    } else {
-        while (lists) { NativeList *next = lists->next; native_list_free(lists); lists = next; }
-    }
+    native_render_frame(lists);
 }
 static ABI int hook_submit(void *c, uint64_t workload) {
     submit_list(c, 0);
@@ -553,9 +517,9 @@ static ABI int hook_submit(void *c, uint64_t workload) {
 }
 /* GpuAddress::detileSurfaceRegion(out, tiled, tiling parameters, region {left, top, front, right,
  * bottom, back}, pitch, slice pitch): the CPU reading a GPU-rendered surface, e.g. the save
- * thumbnail (FnThumbCapture). In own mode that memory was never drawn: read the native image. */
+ * thumbnail (FnThumbCapture). That memory was never drawn: read the native image. */
 static ABI int hook_detile(void *out, const void *in, const void *tiling, const uint32_t *region, uint32_t pitch, uint32_t slice_pitch) {
-    if (own && region && region[2] == 0 && region[5] == 1 &&
+    if (region && region[2] == 0 && region[5] == 1 &&
         native_target_read((uint64_t)(uintptr_t)in, out, region[0], region[1], region[3], region[4], pitch))
         return 0;
     return game_detile(out, in, tiling, region, pitch, slice_pitch);
@@ -576,31 +540,29 @@ static unsigned prologue_bytes(const unsigned char *code) {
     return 0;
 }
 
-int native_gfx_install(unsigned char *image, unsigned char *stubs, size_t stub_bytes) {
+int native_gfx_install(unsigned char *image, unsigned char *stubs, size_t stub_bytes, uint32_t (*address)(uint32_t)) {
     static const struct { uint32_t at; void *hook; void **game; } table[] = {
 #define X(at, name, ret, params, args) {at, (void *)hook_##name, (void **)&game_##name},
         GFX_FUNCTIONS(X)
 #undef X
     };
     enum { COUNT = sizeof(table) / sizeof(*table), SLOT = 48 };
-    if (!native_gfx_mode()) return 0;
     if (stub_bytes < (size_t)COUNT * SLOT) return 0;
+    uint32_t at[COUNT];
     for (int i = 0; i < COUNT; ++i) {
-        const int64_t reach = (int64_t)(uintptr_t)(stubs + i * SLOT) - (int64_t)(uintptr_t)(image + table[i].at + 5);
-        if (!prologue_bytes(image + table[i].at) || reach < INT32_MIN || reach > INT32_MAX) {
-            printf("Native: the graphics library is not where v01.04 has it (0x%x); native renderer off\n", table[i].at);
-            mode = NATIVE_OFF;
+        at[i] = address(table[i].at);
+        const int64_t reach = (int64_t)(uintptr_t)(stubs + i * SLOT) - (int64_t)(uintptr_t)(image + at[i] + 5);
+        if (!at[i] || !prologue_bytes(image + at[i]) || reach < INT32_MIN || reach > INT32_MAX) {
+            printf("Native: graphics library entry 0x%x (v01.04) not found in this build (0x%x)\n", table[i].at, at[i]);
             return 0;
         }
     }
-    if (mode == NATIVE_DRAW && !native_render_init()) {
-        printf("Native: the renderer did not start; shadPS4 draws instead\n");
-        mode = NATIVE_OFF;
-        own = 0;
+    if (!native_render_init()) {
+        printf("Native: the renderer did not start\n");
         return 0;
     }
     for (int i = 0; i < COUNT; ++i) {
-        unsigned char *code = image + table[i].at, *stub = stubs + i * SLOT, *trampoline = stub + 16;
+        unsigned char *code = image + at[i], *stub = stubs + i * SLOT, *trampoline = stub + 16;
         const unsigned length = prologue_bytes(code);
         const uintptr_t hook = (uintptr_t)table[i].hook, resume = (uintptr_t)(code + length);
         /* stub: movabs r11, hook; jmp r11 */
@@ -616,7 +578,6 @@ int native_gfx_install(unsigned char *image, unsigned char *stubs, size_t stub_b
         memcpy(code + 1, &relative, 4);
         memset(code + 5, 0x90, length - 5);
     }
-    printf("Native: %d graphics library entries hooked (%s)\n", COUNT,
-           own ? "drawing, owning the frame" : mode == NATIVE_DRAW ? "drawing" : "recording");
+    printf("Native: renderer (experimental), %d graphics library entries hooked\n", COUNT);
     return 1;
 }

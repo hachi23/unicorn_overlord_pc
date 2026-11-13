@@ -57,28 +57,35 @@ anyway, for testing only.
 
 ## Performance
 
-Measured on the test system above, 1080p:
+Measured on the test system above, 1080p, with the renderer of v1.6.0 (`VW_VSYNC=0`):
 
-| Scene | Draws per frame | FPS |
-|---|---|---|
-| Palevia Town battle map (Continue from a chapter 1 save) | ~1,100 | 60, steady |
-| New Game opening (cavalry charge in the rain) | ~4,300 | 49-54 |
-| First battle map, prologue (earlier measurement) | ~3,650 | ~53 |
+| Scene | Draws per frame | FPS (v1.6.0) | FPS (v1.5.2) |
+|---|---|---|---|
+| New Game opening (cavalry charge in the rain) | ~4,300 | 60, steady | 36-54 |
+| Title screen | ~240 | 60 | 60 |
+| Vega 8 integrated GPU, the opening | ~4,300 | 46-60 | 38-59 |
 
-- The busy scenes are limited by the CPU, not the GPU: the PS4's GPU reads its command stream in
-  hardware, the port decodes it in software. Two threads share that work (stage A decodes, about
-  3.8 µs per draw; stage B records Vulkan commands) and both are close to full in the opening.
-  A faster CPU (higher single-core speed) helps most.
-
-- 720p and 900p render resolutions lower the GPU's work, not the CPU's: they help weak GPUs,
-  not the busy scenes above.
-- The first time a scene is shown, its shaders are compiled, which can stutter. Later runs use
-  the shader cache in `user/`.
+- The game limits itself to 60 FPS. Up to v1.5.2 the busy scenes were limited by the CPU
+  decoding the PS4's GPU command stream in software; the renderer of v1.6.0 takes the game's
+  graphics calls directly instead (about 0.7 ms of replay per frame in the opening).
+- 720p and 900p render resolutions lower the GPU's work: they help weak GPUs.
+- The first start translates the game's shaders (a few seconds). A shader's first use in a scene
+  compiles it, which can stutter once; later runs use the driver's cache in
+  `user/native_shaders/pipelines.bin`.
 - Starting the game: about 1 second until the game's own code runs (the image preparation is
   cached), then the game's warning and logo screens.
+- With VSync on, KWin (KDE) slows a window it thinks is hidden to 20 FPS. That is the desktop,
+  not the game.
 
 ## Graphics
 
+- **The renderer is experimental** (v1.6.0, see the README's Renderer section). It was checked
+  picture by picture against v1.5.2 through the prologue and chapter 1, on AMD GPUs on Linux.
+  Not checked by the developer: Windows, NVIDIA and Intel GPUs, the Steam Deck, anything past
+  chapter 1. Not implemented yet: depth testing and culling (nothing seen so far uses them),
+  two of the game's three compute shaders, and two shaders the translator cannot find in the
+  executable (`e041714c`, `546af9ea`; the log names a missing shader once). If a scene looks
+  wrong, a screenshot of the same place with v1.5.2 helps most.
 - **Chapter title card shows one box in the Chinese text languages** (#49): the card that opens
   a chapter draws its title in a large font that, in the Chinese releases, holds only the
   Chinese titles' characters. With the English patch the port now runs the patch's text in the
@@ -93,11 +100,6 @@ Measured on the test system above, 1080p:
   with black bars; nobody has tried it on an ultrawide monitor yet. Menus and text stay 16:9 in
   the middle. Please report how it looks with the **Ultrawide report** issue template (README,
   Ultrawide).
-- The two GPU readback options are **on by default** because they are faster. If something
-  looks wrong (black screen, missing or flickering graphics, wrong lighting or shadows), turn
-  them off: in-game menu (**Insert**) → Performance → "Game reads GPU data without waiting" and
-  "Deferred GPU readbacks", then **Apply and restart**. If the game then fails to start, the
-  next start goes back to the previous options by itself.
 - A render resolution change applies after a restart: the Insert menu has **Apply and
   restart**; in the game's Options screen it takes effect the next time the game starts.
 - Every render resolution other than 1080p uses the game's own PS4 Pro mode at that size.
@@ -113,16 +115,13 @@ Measured on the test system above, 1080p:
   a change without a restart has not been checked. Restart the game after changing it.
 - On Linux with AMD GPUs, `RADV_DEBUG=nohiz` is set automatically to avoid rendering errors.
 - On laptops with two GPUs the port picks the discrete one.
-- **NVIDIA:** not tested by the developer (no NVIDIA hardware). v1.0.0 crashed at start on an
-  RTX 4050 laptop inside NVIDIA's pipeline-binary support (v1.1.0 has the same code); v1.2.0
-  leaves that feature off on NVIDIA, so shaders compile the normal way. NVIDIA takes workaround
-  paths AMD does not (clip distances, integer fragment inputs, shared-memory barriers), so
-  reports of graphics errors on NVIDIA are very welcome. GTX 10-series (Pascal) cards have no
-  fragment barycentrics and use a different integer-input workaround (`VW_INTERP_INT_FIX=0`
-  turns it off).
-- Needs a Vulkan 1.3 GPU with sparse buffers and a recent driver: older Intel integrated graphics
-  on Linux (Gen9, such as UHD 620) stop at start with "Required Vulkan feature unavailable" (#55). macOS is
-  not supported.
+- **NVIDIA and Intel:** not tested by the developer (no such hardware). Reports are very welcome,
+  with the `Native:` lines of the log.
+- Needs a Vulkan 1.3 GPU with buffer device addresses, descriptor indexing, 64-bit shader
+  integers, subgroup ballot/vote and push descriptors, and a recent driver; without one the game
+  stops at start and the log names what is missing (`Native: <GPU> has no ...`). Sparse buffers
+  are no longer needed, so older Intel GPUs that v1.5.2 refused (#55) may work now (untested).
+  macOS is not supported.
 
 ## Audio
 
@@ -148,8 +147,8 @@ Measured on the test system above, 1080p:
   (controller) environment variables override saved bindings, e.g. `VW_KEY_MAP="cross=Q"`.
 - PS4 package (.pkg) installation of the game: the port installs an already extracted game
   folder. DLC packages are read as they are (README, DLC).
-- The game's Options screen has the main PC settings; the GPU readback options, frames queued,
-  background shader compilation, overlay layout and button remapping are only in the Insert menu.
+- The game's Options screen has the main PC settings; the overlay layout and button remapping
+  are only in the Insert menu.
 
 ## Open questions
 

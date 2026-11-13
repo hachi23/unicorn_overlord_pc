@@ -8,7 +8,7 @@ nothing is written to the game's system data. The Insert menu keeps every settin
 the ones not in the screen.
 
 Code: `src/unicorn_native_settings.h` (the game side, installed by `src/probe.c`) and
-`vwgpu_setting_rows/value/set` in `gpu/shim/vw_settings.cpp` (the rows, their texts, and how a
+`vwgpu_setting_rows/value/set` in `gpu/platform/vw_settings.cpp` (the rows, their texts, and how a
 value maps to a `VwSettings` field). Tests: `tests/test_native_settings.c` (`build.sh --test`)
 and `tests/test_graphics_settings.cpp`.
 

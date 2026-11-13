@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* The native renderer's Vulkan side (see native_gfx.h): draws a recorded frame with its own
- * device, images and hand-written shaders. It knows nothing of the console's command buffers.
- *
- * For now it draws off screen beside the existing renderer, for comparison:
+/* The renderer's Vulkan side (see native_gfx.h): replays each frame the hooks recorded
+ * (native_rec.c) on the platform's device and queue (gpu/platform), with the game's shaders
+ * translated to SPIR-V (native_shader_spirv.c). It knows nothing of the console's command
+ * buffers. At each flip the display image is copied into an image the presenter samples
+ * (native_present_image).
+ * Design and debugging: docs/dev/NATIVE_RENDERER.md. Debugging switches:
  *   VW_NATIVE_SHOT_TRIGGER  when this file appears, the frame's display image is written as a
  *                           PNG into VW_NATIVE_DUMP_DIR
- *   VW_NATIVE_SHOT_TARGET   (hex address) write that render target instead */
+ *   VW_NATIVE_SHOT_TARGET   (hex address) write that render target instead
+ *   VW_NATIVE_SHOT_ALPHA, VW_NATIVE_WATCH, VW_NATIVE_WHITE, VW_NATIVE_LOG_TARGETS: see below */
 #define _GNU_SOURCE
 #include <inttypes.h>
 #include <stdint.h>
@@ -19,17 +22,18 @@
 #include "../gpu/vwgpu.h"
 #include "native_gfx.h"
 #include "native_gnm.h"
+#include "native_shader.h"
 #include "runtime.h"
 
 /* A game shader converted for this renderer: <shader dir>/<hash>.spv, written from the player's
- * own executable by the recompiler's native mode (tools/native/aot). Loaded on first use. */
+ * own executable by the translator (src/native_shader_spirv.c). Loaded on first use. */
 typedef struct { uint32_t hash; int vertex; VkShaderModule module; } NativeProgram;
 enum { MAX_PROGRAMS = 4096 };
 static NativeProgram programs[MAX_PROGRAMS];
 static uint32_t program_count;
 static char shader_dir[1024];
 /* Bumped when the converter's output changes: old conversions are then redone. */
-#define CONVERTER_VERSION 2
+#define CONVERTER_VERSION 4   /* 4: own translator (src/native_shader_spirv.c) */
 
 /* VW_NATIVE_SHADERS=<dir> uses converted shaders from there as they are; otherwise they live in
  * <user>/native_shaders, converted from the dump's eboot.bin when the stamp there does not
@@ -50,7 +54,7 @@ static int shaders_prepare(void) {
     if (f) { if (!fgets(stamp, sizeof(stamp), f)) stamp[0] = 0; fclose(f); }
     if (!strcmp(stamp, want)) return 1;
     const uint64_t start = clock_ns();
-    const int converted = vwgpu_native_convert(eboot, shader_dir, 1);
+    const int converted = ns_convert_all(eboot, shader_dir);
     printf("Native: converted %d shaders from %s in %.1f s\n", converted, eboot, (double)(clock_ns() - start) / 1e9);
     if (converted <= 0) return 0;
     if ((f = fopen(stamp_path, "w"))) { fputs(want, f); fclose(f); }
@@ -58,7 +62,7 @@ static int shaders_prepare(void) {
 }
 
 /* The features the converted shaders and the bindless tables use; the presenter's device
- * enables each one its GPU has (vk_instance.cpp). 0, naming the first one missing, otherwise. */
+ * enables each one its GPU has (gpu/platform/vulkan.cpp). 0, naming the first one missing, otherwise. */
 static int features_present(VkPhysicalDevice gpu) {
     VkPhysicalDeviceVulkan13Features f13 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     VkPhysicalDeviceVulkan12Features f12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &f13};
@@ -77,8 +81,10 @@ static int features_present(VkPhysicalDevice gpu) {
         {f12.descriptorBindingSampledImageUpdateAfterBind, "descriptorBindingSampledImageUpdateAfterBind"},
         {f13.dynamicRendering, "dynamicRendering"},
         {f13.shaderDemoteToHelperInvocation, "shaderDemoteToHelperInvocation"},
-        {(subgroup.supportedStages & stages) == stages && (subgroup.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT),
-         "subgroup ballot in vertex and pixel shaders"},
+        {(subgroup.supportedStages & stages) == stages &&
+             (subgroup.supportedOperations & (VK_SUBGROUP_FEATURE_BALLOT_BIT | VK_SUBGROUP_FEATURE_VOTE_BIT)) ==
+                 (VK_SUBGROUP_FEATURE_BALLOT_BIT | VK_SUBGROUP_FEATURE_VOTE_BIT),
+         "subgroup ballot and vote in vertex and pixel shaders"},
     };
     for (size_t i = 0; i < sizeof(needed) / sizeof(*needed); ++i)
         if (!needed[i].present) {
@@ -88,8 +94,18 @@ static int features_present(VkPhysicalDevice gpu) {
     return 1;
 }
 
-#define CHECK(call) do { VkResult check_ = (call); if (check_ != VK_SUCCESS) { \
-    fprintf(stderr, "Native: %s failed (%d) at %s:%d\n", #call, (int)check_, __FILE__, __LINE__); abort(); } } while (0)
+/* A lost device (driver reset, GPU hang) ends the run with the message and exit code 23 that
+ * TROUBLESHOOTING.md and the start program know; any other failure is a bug: abort. */
+static void vk_failed(VkResult result, const char *call, const char *file, int line) {
+    if (result == VK_ERROR_DEVICE_LOST) {
+        fprintf(stderr, "GPU crash: the graphics device was lost (%s). Attach this run's log to your bug report.\n", call);
+        fflush(NULL);
+        _Exit(23);   /* no waiting on, or teardown of, a failed device */
+    }
+    fprintf(stderr, "Native: %s failed (%d) at %s:%d\n", call, (int)result, file, line);
+    abort();
+}
+#define CHECK(call) do { VkResult check_ = (call); if (check_ != VK_SUCCESS) vk_failed(check_, #call, __FILE__, __LINE__); } while (0)
 
 enum { MAX_TARGETS = 1024, MAX_TEXTURES = 2048, MAX_PIPELINES = 512, MAX_SAMPLERS = 64, MAX_STAGING = 256,
        LOCATIONS = 16, CONSTANT_RANGE = 4096, GAME_SLOTS = 16, TEXTURE_SLOTS = 8, FRAMES = 2,
@@ -98,7 +114,7 @@ enum { MAX_TARGETS = 1024, MAX_TEXTURES = 2048, MAX_PIPELINES = 512, MAX_SAMPLER
 /* index: the image's place in the bindless texture array (set 1, binding 0). */
 typedef struct { VkImage image; VkDeviceMemory memory; VkImageView view; uint32_t index; } Image;
 typedef struct { VkBuffer buffer; VkDeviceMemory memory; uint8_t *mapped; VkDeviceSize size, used; VkDeviceAddress address; } Ring;
-/* Each draw's record (Info::NativeLayout in the recompiler): per texture slot the bindless
+/* Each draw's record (the layout src/native_shader_spirv.c reads): per texture slot the bindless
  * texture index (low 20 bits) and sampler index (high 12 bits); per stage and game constant slot
  * the GPU address of its block (an unbound slot reads the ring's zeroed start); per vertex input
  * its stream's address, stride and format (stream_code). The draw's firstInstance is its
@@ -111,7 +127,7 @@ typedef struct {
     VkDeviceAddress block[2][GAME_SLOTS];
     RecordStream stream[RECORD_STREAMS];
 } Record;
-_Static_assert(sizeof(Record) == 544, "Record must match Info::NativeLayout in the recompiler");
+_Static_assert(sizeof(Record) == 544, "Record must match the layout src/native_shader_spirv.c reads");
 typedef struct { VkDeviceAddress records; } Push;
 typedef struct { uint64_t address; uint32_t width, height, swap, tiling; Image image; } Target;
 /* source: the descriptor it was made from; span: the bytes of game memory it reads; hash: of
@@ -126,13 +142,12 @@ static VkInstance instance;
 static VkPhysicalDevice physical;
 static VkDevice device;
 static VkQueue queue;
-static int shared_device;   /* the presenter's device (vwgpu_vulkan_handles), queue shared with it */
 static VkFence once_fence;
 /* Submits to the queue; the presenter submits to it from other threads under the same lock. */
 static void queue_submit(const VkSubmitInfo *submit, VkFence fence) {
-    if (shared_device) vwgpu_queue_lock();
+    vwgpu_queue_lock();
     const VkResult result = vkQueueSubmit(queue, 1, submit, fence);
-    if (shared_device) vwgpu_queue_unlock();
+    vwgpu_queue_unlock();
     CHECK(result);
 }
 static VkCommandPool pool;
@@ -1014,7 +1029,7 @@ static void png_write(const char *path, const uint8_t *rgba, uint32_t width, uin
 
 /* ---- Handing finished frames to the presenter ---- */
 /* With the presenter's device shared, each frame's display image is copied into one of a few
- * images the presenter samples (vk_presenter.cpp PrepareFrame, through native_present_image),
+ * images the presenter samples (gpu/platform/presenter.cpp, through native_present_image),
  * found by the display buffer's address. The copy leaves it in SHADER_READ_ONLY_OPTIMAL; the
  * presenter's later submission on the same queue is ordered after it by the barrier here.
  * Images are never destroyed (a new size makes new ones): the presenter caches views by image. */
@@ -1027,7 +1042,7 @@ static uint64_t present_pending_address;
 static pthread_mutex_t present_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void present_copy(const Target *display) {
-    if (!shared_device || !display) return;
+    if (!display) return;
     const uint32_t k = present_next++ % PRESENTS;
     if (!presents[k].image || presents[k].width != display->width || presents[k].height != display->height) {
         const VkFormat formats[2] = {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB};
@@ -1280,73 +1295,17 @@ static void render_frame(NativeList *lists) {
     while (lists) { NativeList *next = lists->next; native_list_free(lists); lists = next; }
 }
 
-static int device_create(uint32_t *family_out);
 static int render_init(uint32_t family);
 int native_render_init(void) {
     if (!shaders_prepare()) return 0;
-    uint32_t family = 16;
+    uint32_t family;
     void *handles[4];
-    if (!getenv("VW_NATIVE_OWN_DEVICE") && vwgpu_vulkan_handles(&handles[0], &handles[1], &handles[2], &handles[3], &family)) {
-        instance = (VkInstance)handles[0]; physical = (VkPhysicalDevice)handles[1];
-        device = (VkDevice)handles[2]; queue = (VkQueue)handles[3];
-        if (!features_present(physical)) return 0;
-        shared_device = 1;
-        vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
-    } else if (!device_create(&family)) {
-        return 0;
-    }
-    return render_init(family);
-}
-/* A device of our own (VW_NATIVE_OWN_DEVICE, or no presenter). */
-static int device_create(uint32_t *family_out) {
-    const VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "vwport native",
-                                   .apiVersion = VK_API_VERSION_1_3};
-    const VkInstanceCreateInfo instance_info = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app};
-    if (vkCreateInstance(&instance_info, NULL, &instance) != VK_SUCCESS) return 0;
-    VkPhysicalDevice found[16];
-    uint32_t count = 16;
-    if (vkEnumeratePhysicalDevices(instance, &count, found) < 0 || !count) return 0;
-    const char *pick = getenv("VW_NATIVE_GPU");
-    uint32_t wanted = pick ? (uint32_t)atoi(pick) : 0;
-    /* By default the first discrete GPU (laptops list the integrated one first). */
-    for (uint32_t i = 0; !pick && i < count; ++i) {
-        VkPhysicalDeviceProperties p;
-        vkGetPhysicalDeviceProperties(found[i], &p);
-        if (p.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && p.apiVersion >= VK_API_VERSION_1_3) { wanted = i; break; }
-    }
-    physical = found[wanted < count ? wanted : 0];
-    VkPhysicalDeviceProperties properties;
-    vkGetPhysicalDeviceProperties(physical, &properties);
-    if (properties.apiVersion < VK_API_VERSION_1_3) {
-        printf("Native: %s has no Vulkan 1.3\n", properties.deviceName);
-        return 0;
-    }
+    if (!vwgpu_vulkan_handles(&handles[0], &handles[1], &handles[2], &handles[3], &family)) return 0;
+    instance = (VkInstance)handles[0]; physical = (VkPhysicalDevice)handles[1];
+    device = (VkDevice)handles[2]; queue = (VkQueue)handles[3];
     if (!features_present(physical)) return 0;
     vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
-    VkQueueFamilyProperties families[16];
-    uint32_t family_count = 16, family = 16;
-    vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, families);
-    for (uint32_t i = 0; i < family_count && family == 16; ++i)
-        if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) family = i;
-    if (family == 16) return 0;
-    const float priority = 1.0f;
-    const VkDeviceQueueCreateInfo queue_info = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = family, .queueCount = 1, .pQueuePriorities = &priority};
-    VkPhysicalDeviceVulkan13Features features13 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-                                                  .dynamicRendering = VK_TRUE};
-    VkPhysicalDeviceVulkan12Features features12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-        .pNext = &features13, .runtimeDescriptorArray = VK_TRUE, .descriptorBindingPartiallyBound = VK_TRUE,
-        .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE, .descriptorIndexing = VK_TRUE,
-        .bufferDeviceAddress = VK_TRUE};
-    const VkPhysicalDeviceFeatures2 features = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &features12,
-                                                .features = {.textureCompressionBC = VK_TRUE, .multiDrawIndirect = VK_TRUE,
-                                                             .drawIndirectFirstInstance = VK_TRUE}};
-    const VkDeviceCreateInfo device_info = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &features,
-        .queueCreateInfoCount = 1, .pQueueCreateInfos = &queue_info};
-    if (vkCreateDevice(physical, &device_info, NULL, &device) != VK_SUCCESS) return 0;
-    vkGetDeviceQueue(device, family, 0, &queue);
-    *family_out = family;
-    return 1;
+    return render_init(family);
 }
 static int render_init(uint32_t family) {
     const VkFenceCreateInfo fence_info = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -1417,7 +1376,6 @@ static int render_init(uint32_t family) {
     pipeline_cache_open();
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
-    printf("Native: renderer on %s (%s)\n", properties.deviceName,
-           shared_device ? "the presenter's device" : "its own device");
+    printf("Native: renderer on %s\n", properties.deviceName);
     return 1;
 }

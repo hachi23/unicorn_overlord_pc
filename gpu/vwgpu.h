@@ -1,5 +1,5 @@
-/* C interface of the GPU library (gpu/): shadPS4's Liverpool/Vulkan video core,
- * GnmDriver, VideoOut and kernel event queues, adapted to the native loader. */
+/* C interface of the GPU library (gpu/platform/): window, Vulkan device, presenter and overlay,
+ * and the PS4 GnmDriver, VideoOut and kernel event queue libraries. */
 #ifndef VWGPU_H
 #define VWGPU_H
 #include <stdint.h>
@@ -61,10 +61,6 @@ unsigned vwgpu_symbol_count(void);
 /* The native renderer (src/native_vk.c) shares the presenter's Vulkan device: its handles
  * (VkInstance, VkPhysicalDevice, VkDevice, VkQueue as pointers) and graphics queue family.
  * 0 before the presenter exists. Submits to the queue hold vwgpu_queue_lock. */
-/* Converts every vertex and pixel shader in the game executable EBOOT into OUT_DIR/<hash>.spv
- * (native_renderer: for src/native_vk.c; else with the old recompiler's bindings). Returns the
- * number converted, -1 when EBOOT or OUT_DIR cannot be opened. */
-int vwgpu_native_convert(const char *eboot, const char *out_dir, int native_renderer);
 int vwgpu_vulkan_handles(void **instance, void **physical, void **device, void **queue, uint32_t *family);
 void vwgpu_queue_lock(void);
 void vwgpu_queue_unlock(void);

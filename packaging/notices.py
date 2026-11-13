@@ -11,15 +11,14 @@ import sysconfig
 
 ROOT = Path(__file__).resolve().parent.parent
 VENDORED = {
-    'shadPS4': 'gpu/shadps4/LICENSE', 'LibAtrac9': 'third_party/LibAtrac9/LICENSE',
-    'imgui': 'gpu/third_party/imgui/LICENSE.txt', 'sirit': 'gpu/third_party/sirit/LICENSE.txt',
-    'SPIRV-Headers': 'gpu/third_party/sirit/externals/SPIRV-Headers/LICENSE',
-    'magic_enum': 'gpu/third_party/magic_enum/LICENSE', 'miniz': 'gpu/third_party/miniz/LICENSE',
-    'xbyak': 'gpu/third_party/xbyak/COPYRIGHT', 'half': 'gpu/third_party/half/LICENSE.txt',
+    # Some structure layouts and values follow shadPS4 (GPL-2.0-or-later, the license of this
+    # project too; gpu/VENDOR.txt).
+    'shadPS4': 'LICENSE', 'LibAtrac9': 'third_party/LibAtrac9/LICENSE',
+    'imgui': 'gpu/third_party/imgui/LICENSE.txt',
     'DejaVu': 'gpu/third_party/fonts/LICENSE-DejaVu.txt',
     'Anime4K': 'gpu/third_party/anime4k/LICENSE',
 }
-STATIC = ('zlib', 'xxhash', 'fmt', 'zycore', 'zydis', 'sdl3', 'ffmpeg')
+STATIC = ('zlib', 'sdl3', 'ffmpeg')
 
 
 def copy_notices(source, destination):
@@ -40,12 +39,9 @@ def collect_native(destination, root=ROOT):
     for name in STATIC:
         copy_notices(root / 'out/deps/build' / name, destination / name)
     shutil.copytree(root / 'packaging/licenses', destination / 'headers', dirs_exist_ok=True)
-    # Preserve the original inline notices in AMD's shader and register headers, including
-    # the extra portability-header attribution. These files contain no game data.
-    for source in ('gpu/shadps4/video_core/host_shaders/fsr/ffx_a.h',
-                   'gpu/shadps4/video_core/host_shaders/fsr/ffx_fsr1.h',
-                   'gpu/third_party/gcn/include/gcn/si_ci_vi_merged_offset.h',
-                   'gpu/third_party/gcn/include/gcn/si_ci_vi_merged_pm4_it_opcodes.h'):
+    # Preserve the original inline notices in AMD's FSR shader headers, including the extra
+    # portability-header attribution. These files contain no game data.
+    for source in ('gpu/platform/shaders/ffx_a.h', 'gpu/platform/shaders/ffx_fsr1.h'):
         shutil.copy2(root / source, destination / Path(source).name)
 
 
