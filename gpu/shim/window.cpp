@@ -1,4 +1,6 @@
 // vw: SDL3 window for the Vulkan swapchain (X11 or Wayland).
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -125,6 +127,17 @@ void WindowSDL::UpdateTextTitle() {
     VwOverlay::SetTextEntry(text_active, text_prompt, text);
 }
 
+namespace {
+std::atomic<int64_t> mouse_map_ns{0};
+int64_t NowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+} // namespace
+
+void MouseMapActive() {
+    mouse_map_ns.store(NowNs(), std::memory_order_relaxed);
+}
+
 bool WindowSDL::PollEvents() {
     {
         std::scoped_lock lock{text_mutex};
@@ -140,6 +153,12 @@ bool WindowSDL::PollEvents() {
     }
     if (const int mode = VwSettings::Get().display_mode; mode != display_mode) {
         ApplyDisplayMode(mode);
+    }
+    // On the battle map the game's cursor is the pointer: hide the system one over the window.
+    const bool hide = NowNs() - mouse_map_ns.load(std::memory_order_relaxed) < 300'000'000 && !VwOverlay::CapturesInput();
+    if (hide != pointer_hidden) {
+        pointer_hidden = hide;
+        hide ? SDL_HideCursor() : SDL_ShowCursor();
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {

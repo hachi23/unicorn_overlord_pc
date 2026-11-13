@@ -38,6 +38,7 @@ public:
 private:
     std::atomic<s32> width, height;
     std::atomic<bool> is_open{true};
+    bool pointer_hidden = false;   // window thread only
     std::mutex text_mutex;
     bool text_requested{}, text_active{};
     int display_mode = -1; ///< applied VwSettings display mode (window thread)
@@ -48,5 +49,9 @@ private:
     SDL_Window* window{};
     WindowSystemInfo window_info{};
 };
+
+// The battle map cursor followed the mouse (any thread): PollEvents hides the system pointer
+// over the window while that keeps happening.
+void MouseMapActive();
 
 } // namespace Frontend

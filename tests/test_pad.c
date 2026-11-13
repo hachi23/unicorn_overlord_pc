@@ -6,6 +6,7 @@
 static int capture, dead_zone=15;
 int vwgpu_stick_dead_zone(void) { return dead_zone; }
 int vwgpu_overlay_captures_input(void) { return capture; }
+void vwgpu_mouse_map_active(void) {}
 int vwgpu_setting_text(const char *key, char *out, uint64_t size) { (void)key; (void)out; (void)size; return 0; }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;

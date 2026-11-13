@@ -187,6 +187,15 @@ in the port's menu (Insert) > Controls. The defaults:
 | Insert | the port's menu |
 | F1 | the key list |
 
+### Mouse
+
+On the battle map the mouse moves the game's cursor (the glove); the system pointer is hidden
+over the window there. Left click is Cross and right click is Circle, everywhere. Menus are
+still chosen with the keys or a controller: the game has no pointer in its menus. The click
+that brings the window to the front is not passed to the game. `VW_MOUSE=0` turns the cursor
+movement off. Only CUSA36381 v01.04 for now; with the Hong Kong 1.05 package the mouse only
+clicks.
+
 ## Building
 
 Linux needs GCC or Clang, CMake, Ninja, Python 3, and the Vulkan, SDL3 and FFmpeg development

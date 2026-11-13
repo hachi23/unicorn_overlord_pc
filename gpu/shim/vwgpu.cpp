@@ -359,6 +359,10 @@ extern "C" int vwgpu_overlay_captures_input(void) {
     return VwOverlay::CapturesInput() ? 1 : 0;
 }
 
+extern "C" void vwgpu_mouse_map_active(void) {
+    Frontend::MouseMapActive();
+}
+
 extern "C" int vwgpu_text_input_begin(const char* initial, const char* prompt) {
     if (!g_window) return 0;
     g_window->BeginTextInput(initial ? initial : "", prompt ? prompt : "Text");
