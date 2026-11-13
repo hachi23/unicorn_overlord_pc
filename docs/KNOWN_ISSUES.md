@@ -25,7 +25,9 @@ Results from other hardware are welcome in the issues.
 ## Supported dump only
 
 **CUSA36381 (Asia) version 01.04**: the base game with the 1.04 update merged on
-top. Also the **Hong Kong 1.05 package** (`HP0177-CUSA36381_00-UNICORNOVERLORD0-A0100-V0105`,
+top. Two `eboot.bin` files of 01.04 are known and both work: the retail one from the 1.04 update
+(#95), and a backported one in which the PSN web API imports return 0 without calling (the game
+code is the same). Also the **Hong Kong 1.05 package** (`HP0177-CUSA36381_00-UNICORNOVERLORD0-A0100-V0105`,
 #33): its `param.sfo` says version 01.00 (master 1.05), and its `eboot.bin` is another build with
 the same code at other addresses, which `src/unicorn_build.h` maps. It has Traditional and
 Simplified Chinese, Korean and Japanese text, no English; tested to the opening scenes with every
@@ -52,7 +54,7 @@ the separate Korean release (untested). Without it, Korean falls back to the gam
 The start program refuses other regions (US, EU, Japan) and other versions; they have different
 executables and the port's code hooks would not match. It also refuses any other build of
 `eboot.bin` (another region or update package): setup and every start check its SHA-256 against
-the two known builds (#14). `VW_ALLOW_OTHER_EBOOT=1` starts one
+the three known builds (#14). `VW_ALLOW_OTHER_EBOOT=1` starts one
 anyway, for testing only.
 
 ## Performance
