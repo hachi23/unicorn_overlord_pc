@@ -6,7 +6,7 @@
  *   UcStCursor: vtable 0x15012d0, 0xd90 bytes. World position x, y, z floats at +0xa0 and the
  *     last frame's at +0xb0. Screen right is world +x, screen down +z.
  *   Vtable slot 4 (0x4569b0) runs once per frame while the cursor exists.
- *   The battle manager (global pointer 0x234eec0) lists the windows open over the map at +0xb98:
+ *   The battle manager (global pointer 0x234eec0; 1.05: see cursor_builds) lists the windows open over the map at +0xb98:
  *     zero while the cursor moves freely.
  *
  * Slot 4 is replaced by unicorn_cursor_stub: it calls the game's method with every register as
@@ -23,7 +23,14 @@ void runtime_mouse_take(float *dx, float *dy);
 /* Tilts the left stick toward (dx, dy) for a moment (src/runtime_pad.c). */
 void runtime_mouse_nudge(float dx, float dy);
 
-enum { CURSOR_VTABLE = 0x15012d0, CURSOR_UPDATE_SLOT = 4, CURSOR_UPDATE = 0x4569b0, BATTLE_MANAGER = 0x234eec0 };
+enum { CURSOR_VTABLE = 0x15012d0, CURSOR_UPDATE_SLOT = 4 };
+/* The update method and the battle manager's global per build (Hong Kong 1.05 found with
+ * tools/re/map_addresses.py; the vtable did not move). */
+static const struct { const char *build; uint32_t update, manager; } cursor_builds[] = {
+    {"v01.04", 0x4569b0, 0x234eec0},
+    {"Hong Kong 1.05", 0x4575e0, 0x234eee0},
+};
+static uint32_t battle_manager;
 __attribute__((used)) void *unicorn_cursor_original;   /* read by the stub */
 static int cursor_debug;
 static unsigned char *cursor_image;
@@ -35,7 +42,7 @@ __attribute__((used)) void ABI unicorn_cursor_after(unsigned char *object) {
     runtime_mouse_take(&dx, &dy);
     /* A window over the map (the deploy menu, a unit's orders...): the cursor stays put, and
      * motion meanwhile is dropped, not saved for later. */
-    const unsigned char *manager = *(unsigned char **)(cursor_image + BATTLE_MANAGER);
+    const unsigned char *manager = *(unsigned char **)(cursor_image + battle_manager);
     if (!manager || *(const uint64_t *)(manager + 0xb98)) { held = 0; return; }
     float *p = (float *)(object + 0xa0), *previous = (float *)(object + 0xb0);
     /* After a facility menu the game walks the cursor back to the facility until the stick
@@ -75,19 +82,21 @@ __asm__(".text\n.globl unicorn_cursor_stub\nunicorn_cursor_stub:\n"
         "ret\n");
 void unicorn_cursor_stub(void);
 
-/* v01.04 only: the vtable must hold the method it had when this was written. image: the eboot
- * of a known Unicorn Overlord build, image_bytes how much of it is mapped. */
+/* The build is told by which method the vtable holds. image: the eboot of a known Unicorn
+ * Overlord build, image_bytes how much of it is mapped. */
 static void install_unicorn_mouse(unsigned char *image, uint64_t image_bytes) {
     if (getenv("VW_MOUSE") && !strcmp(getenv("VW_MOUSE"), "0")) return;
-    if (image_bytes < (uint64_t)BATTLE_MANAGER + 8) return;
+    if (image_bytes < 0x234eee8) return;   /* both builds' globals are inside */
     cursor_debug = getenv("VW_MOUSE_DEBUG") != NULL;
     cursor_image = image;
     uint64_t *slot = (uint64_t *)(image + CURSOR_VTABLE) + CURSOR_UPDATE_SLOT;
-    if (*slot != (uint64_t)(uintptr_t)(image + CURSOR_UPDATE)) {
-        printf("Mouse: the battle map cursor is not where v01.04 has it: the mouse only clicks\n");
+    for (size_t i = 0; i < sizeof(cursor_builds) / sizeof(*cursor_builds); ++i) {
+        if (*slot != (uint64_t)(uintptr_t)(image + cursor_builds[i].update)) continue;
+        battle_manager = cursor_builds[i].manager;
+        unicorn_cursor_original = (void *)(uintptr_t)*slot;
+        *slot = (uint64_t)(uintptr_t)unicorn_cursor_stub;
+        printf("Mouse: the battle map cursor follows the mouse (%s)\n", cursor_builds[i].build);
         return;
     }
-    unicorn_cursor_original = (void *)(uintptr_t)*slot;
-    *slot = (uint64_t)(uintptr_t)unicorn_cursor_stub;
-    printf("Mouse: the battle map cursor follows the mouse\n");
+    printf("Mouse: the battle map cursor is not where known builds have it: the mouse only clicks\n");
 }
