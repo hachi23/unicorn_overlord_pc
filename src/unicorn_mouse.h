@@ -28,6 +28,8 @@
 void runtime_mouse_take(float *dx, float *dy, int *window_w, int *window_h);
 /* Tilts the left stick toward (dx, dy) for a moment (src/runtime_pad.c). */
 void runtime_mouse_nudge(float dx, float dy);
+/* Hides the system pointer for a moment while the mouse steers the cursor (gpu/vwgpu.h). */
+void vwgpu_mouse_map_active(void);
 
 enum { CURSOR_VTABLE = 0x15012d0, CURSOR_UPDATE_SLOT = 4 };
 /* The update method and the battle manager's global per build (Hong Kong 1.05 found with
@@ -66,18 +68,18 @@ static int camera_view(View *v) {
     return v_dot(v->right, v->right) > 1.0f && v_dot(v->down, v->down) > 1.0f;
 }
 /* Where a world point is on screen (0..1 across the game image). */
-static int view_project(const View *v, Vec3 p, float *u, float *w) {
+static int view_project(const View *v, Vec3 p, float *screen_x, float *screen_y) {
     const Vec3 n = v_cross(v->right, v->down), ray = v_sub(p, v->eye);
     const float along = v_dot(n, ray);
     if (SDL_fabsf(along) < 1e-6f) return 0;
     const Vec3 q = v_sub(v_add(v->eye, v_scale(ray, v_dot(n, v_sub(v->a, v->eye)) / along)), v->a);
-    *u = v_dot(q, v->right) / v_dot(v->right, v->right);
-    *w = v_dot(q, v->down) / v_dot(v->down, v->down);
+    *screen_x = v_dot(q, v->right) / v_dot(v->right, v->right);
+    *screen_y = v_dot(q, v->down) / v_dot(v->down, v->down);
     return 1;
 }
-/* The ground point at height y seen at (u, w) on screen. */
-static int view_ground(const View *v, float u, float w, float y, Vec3 *out) {
-    const Vec3 through = v_add(v->a, v_add(v_scale(v->right, u), v_scale(v->down, w)));
+/* The ground point at height y seen at (screen_x, screen_y) on screen. */
+static int view_ground(const View *v, float screen_x, float screen_y, float y, Vec3 *out) {
+    const Vec3 through = v_add(v->a, v_add(v_scale(v->right, screen_x), v_scale(v->down, screen_y)));
     const Vec3 ray = v_sub(through, v->eye);
     if (!(ray.y < -1e-4f) || !(v->eye.y > y)) return 0;
     *out = v_add(v->eye, v_scale(ray, (y - v->eye.y) / ray.y));
@@ -85,26 +87,35 @@ static int view_ground(const View *v, float u, float w, float y, Vec3 *out) {
 }
 __attribute__((used)) void *unicorn_cursor_original;   /* read by the stub */
 static int cursor_debug;
-static int held;                         /* frames to keep checking the last mouse move */
-static float held_at[2], held_dir[2];    /* where it put the cursor, and the mouse's direction */
+/* After a mouse move: how many more frames to watch for the game pulling the cursor back,
+ * where the mouse put it, and which way the mouse went. */
+static int watch_frames;
+static float placed_at[2], moved_dir[2];
+static uint64_t last_frame_ns;
 
 __attribute__((used)) void ABI unicorn_cursor_after(unsigned char *object) {
     float dx, dy;
     int window_w, window_h;
     runtime_mouse_take(&dx, &dy, &window_w, &window_h);
+    /* The first frame of the map after menus, scenes or a battle: the motion summed up since
+     * the map was last shown is not this frame's, so it is dropped (else the cursor jumps). */
+    const uint64_t now = SDL_GetTicksNS();
+    if (now - last_frame_ns > 200000000ull) dx = dy = 0;
+    last_frame_ns = now;
     /* A window over the map (the deploy menu, a unit's orders...): the cursor stays put, and
      * motion meanwhile is dropped, not saved for later. */
     const unsigned char *manager = *(unsigned char **)(cursor_image + battle_manager);
-    if (!manager || *(const uint64_t *)(manager + 0xb98)) { held = 0; return; }
+    if (!manager || *(const uint64_t *)(manager + 0xb98)) { watch_frames = 0; return; }
+    vwgpu_mouse_map_active();   /* the mouse steers the cursor: no system pointer over the map */
     float *p = (float *)(object + 0xa0), *previous = (float *)(object + 0xb0);
     /* After a facility menu the game walks the cursor back to the facility until the stick
      * moves it. Seen as the cursor leaving where the mouse put it: put it back and tilt the
      * stick the mouse's way, which ends that. */
-    if (held > 0) {
-        --held;
-        if (SDL_fabsf(p[0] - held_at[0]) + SDL_fabsf(p[2] - held_at[1]) > 1.0f) {
-            p[0] = previous[0] = held_at[0], p[2] = previous[2] = held_at[1];
-            runtime_mouse_nudge(held_dir[0], held_dir[1]);
+    if (watch_frames > 0) {
+        --watch_frames;
+        if (SDL_fabsf(p[0] - placed_at[0]) + SDL_fabsf(p[2] - placed_at[1]) > 1.0f) {
+            p[0] = previous[0] = placed_at[0], p[2] = previous[2] = placed_at[1];
+            runtime_mouse_nudge(moved_dir[0], moved_dir[1]);
             if (cursor_debug) printf("Mouse: the game pulled the cursor back: nudging the stick\n");
         }
     }
@@ -113,7 +124,7 @@ __attribute__((used)) void ABI unicorn_cursor_after(unsigned char *object) {
      * image is letterboxed in the window at the camera's aspect ratio. */
     float wx = 0, wz = 0;
     View view;
-    float u, w;
+    float screen_x, screen_y;
     Vec3 to;
     int exact = camera_view(&view);
     if (exact) {
@@ -121,8 +132,8 @@ __attribute__((used)) void ABI unicorn_cursor_after(unsigned char *object) {
         float image_h = (float)window_h;
         if ((float)window_w / aspect < image_h) image_h = (float)window_w / aspect;
         const Vec3 at = {p[0], p[1], p[2]};
-        exact = view_project(&view, at, &u, &w) &&
-                view_ground(&view, u + dx / (image_h * aspect), w + dy / image_h, p[1], &to);
+        exact = view_project(&view, at, &screen_x, &screen_y) &&
+                view_ground(&view, screen_x + dx / (image_h * aspect), screen_y + dy / image_h, p[1], &to);
         if (exact) wx = to.x - p[0], wz = to.z - p[2];
     }
     if (!exact) {
@@ -131,7 +142,7 @@ __attribute__((used)) void ABI unicorn_cursor_after(unsigned char *object) {
     }
     p[0] += wx, p[2] += wz;
     previous[0] += wx, previous[2] += wz;
-    held = 4, held_at[0] = p[0], held_at[1] = p[2], held_dir[0] = dx, held_dir[1] = dy;
+    watch_frames = 4, placed_at[0] = p[0], placed_at[1] = p[2], moved_dir[0] = dx, moved_dir[1] = dy;
     if (cursor_debug)
         printf("Mouse: moved %.0f %.0f points (%s) -> cursor %.1f %.1f\n", dx, dy, exact ? "camera" : "estimate", p[0], p[2]);
 }
@@ -156,7 +167,7 @@ void unicorn_cursor_stub(void);
  * Overlord build, image_bytes how much of it is mapped. */
 static void install_unicorn_mouse(unsigned char *image, uint64_t image_bytes) {
     if (getenv("VW_MOUSE") && !strcmp(getenv("VW_MOUSE"), "0")) return;
-    if (image_bytes < 0x234eee8) return;   /* both builds' globals are inside */
+    if (image_bytes < 0x234eef8) return;   /* every build's globals are inside */
     cursor_debug = getenv("VW_MOUSE_DEBUG") != NULL;
     cursor_image = image;
     uint64_t *slot = (uint64_t *)(image + CURSOR_VTABLE) + CURSOR_UPDATE_SLOT;

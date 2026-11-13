@@ -511,10 +511,9 @@ static uint32_t texture_format(uint32_t format, uint32_t number, VkFormat *out, 
 }
 /* Tile mode 13 (Thin_1dThin): 8x8-element micro tiles in rows of `pitch` elements; inside a
  * tile the elements are in Morton order (x0 y0 x1 y1 x2 y2), whatever the element size. An
- * element is a pixel, or a 4x4 block for BC formats. This lays them out as plain rows. */
-/* Rows [y0, y1) of a 2D-tiled (micro tile 8x8, Morton order) texture into linear rows. Each
- * output row takes 8 pixels from each tile it crosses; the copies have a fixed size so they
- * compile to plain loads and stores. */
+ * element is a pixel, or a 4x4 block for BC formats. UNTILE_ROWS lays rows [y0, y1) out as
+ * plain rows: each output row takes 8 elements from each tile it crosses, in copies of a fixed
+ * size so they compile to plain loads and stores. */
 #define UNTILE_ROWS(BYTES)                                                                          \
     for (uint32_t y = y0; y < y1; ++y) {                                                            \
         uint8_t *out = dst + (size_t)y * width * BYTES;                                             \
@@ -803,7 +802,11 @@ static VkPipeline pipeline_create(int vs, int ps, VkPrimitiveTopology topology) 
     const uint64_t compile_start = clock_ns();
     p->pipeline = pipeline_build(programs[vs].module, programs[ps].module, state.blend, state.mask, topology);
     const double compile_ms = (double)(clock_ns() - compile_start) / 1e6;
-    if (getenv("VW_NATIVE_PIPELINE_LOG"))
+    /* VW_NATIVE_PIPELINE_LOG=1: each pipeline made during play and its compile time (what the
+     * list compiled at start, src/native_pipelines.h, still misses). */
+    static int log_pipelines = -1;
+    if (log_pipelines < 0) log_pipelines = getenv("VW_NATIVE_PIPELINE_LOG") != NULL;
+    if (log_pipelines)
         printf("Native: pipeline %08x/%08x blend %08x mask %x topology %u: %.2f ms\n", programs[vs].hash,
                programs[ps].hash, state.blend, state.mask, (unsigned)topology, compile_ms);
     pipeline_key_seen((PipelineKey){programs[vs].hash, programs[ps].hash, state.blend, state.mask, (uint32_t)topology});

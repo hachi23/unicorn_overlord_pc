@@ -654,7 +654,6 @@ void runtime_mouse_take(float *dx, float *dy, int *window_w, int *window_h) {
     pthread_mutex_unlock(&lock);
     if (w_px<=0 || h<=0) w_px=1381, h=776;   /* the window of scripted runs */
     *dx=x; *dy=y; *window_w=w_px; *window_h=h;
-    vwgpu_mouse_map_active();
 }
 
 /* Tilts the left stick toward (dx, dy) for two pad reads: after a facility menu the game keeps
