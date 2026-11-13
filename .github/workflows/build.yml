@@ -194,12 +194,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Notes: what this build is, then the pull requests merged since the last published release
-          # (GitHub's generated notes, appended after --notes).
+          # Notes: what this build is, .github/prerelease-notes.md, then the pull requests merged since
+          # the last published release (GitHub's generated notes, appended after --notes).
           since=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          intro="Test build of \`main\` at ${GITHUB_SHA}, made by the Build workflow after every merge. It is not a release: it has not been play-tested like one. No game files included. The list at the end covers the changes since ${since}."
           gh release delete latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create latest --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "Latest build ($(echo "$GITHUB_SHA" | cut -c1-7))" \
-            --notes "Test build of \`main\` at ${GITHUB_SHA}, made by the Build workflow after every merge. It is not a release: it has not been play-tested like one. No game files included. Changes since ${since}:" \
+            --notes "$(printf '%s\n\n%s\n' "$intro" "$(cat .github/prerelease-notes.md)")" \
             --generate-notes --notes-start-tag "$since" \
             release/*
