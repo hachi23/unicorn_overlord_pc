@@ -141,6 +141,30 @@ template and attach:
   cut off or misplaced (Win+Shift+S on Windows, Spectacle or your desktop's tool on Linux);
 - your monitor's resolution and the display mode (Windowed, Borderless or Fullscreen).
 
+### Native renderer (experimental)
+
+**Renderer** in the menu (Performance, applied on restart), `renderer=native` in `vw.ini` or
+`VW_NATIVE=own`. The default, shadPS4, emulates the PS4's GPU: it reads the command buffers the
+game builds and turns them into Vulkan. The native renderer takes the game's calls into its
+graphics library directly and draws them with Vulkan, so there is no GPU emulation in between.
+It is faster, most of all on weak GPUs: on an RX 560X the opening holds 60 FPS where shadPS4 drops
+to 36-54, and on a Vega 8 integrated GPU it runs 46-60 FPS where shadPS4 runs 38-59.
+
+On its first start it converts the game's shaders from your `eboot.bin` into
+`<user data>/native_shaders` (a few seconds; again after a game or port update). Nothing from the
+game is shipped with the port. Every display option works with it: render resolution, aspect
+ratio, FSR 1, sharpening and Anime4K.
+
+It is experimental: it was tested through the prologue and chapter 1 (story scenes, the battle
+map, menus, saving and loading) on AMD GPUs on Linux. It needs game version 01.04 and a GPU with
+Vulkan 1.3; without either, or when it cannot start, shadPS4 draws instead and the log says why
+(`Native:` lines). When a start after **Apply and restart** never reaches the game, the next
+start goes back to shadPS4.
+
+If something is missing or looks wrong with it but not with shadPS4, open an issue and attach the
+diagnostics ZIP and a screenshot from each renderer. The log lines that start with `Native:` are
+the useful ones.
+
 ### Other languages (experimental)
 
 **New to this? Start with [docs/LANGUAGES.md](docs/LANGUAGES.md)**: which language you get, how
@@ -242,6 +266,7 @@ out/vwport out/boot-linked.bin --app0 <game folder> --check-imports
 | Loader | `src/probe.c` | Loads the image, applies the per-game code patches (render resolution) and starts the game's code |
 | Runtime | `src/runtime_*.c` | The PS4 system functions: memory, threads, files, audio, video, controller, saves and services |
 | GPU | `gpu/shadps4/` | The shadPS4 video core with this port's threaded draw pipeline ([notes](docs/dev/parallel_gpu.md)) |
+| Native renderer | `src/native_*.c`, `gpu/shim/native_convert.cpp` | The experimental renderer: hooks the game's graphics library and draws with Vulkan; shaders converted at first start ([notes](docs/dev/NATIVE_RENDERER.md)) |
 | In-game menu | `gpu/shim/vw_overlay.cpp` | The Dear ImGui menu and FPS overlay; settings in `gpu/shim/vw_settings.cpp` |
 | Per-game settings | `scripts/game_profiles.py` | Launch defaults and GPU workarounds for each title |
 | Mods and patches | `scripts/mods.py`, `scripts/patches.py` | Loose-file mods and shadPS4 XML patches ([docs](docs/MODS.md)) |

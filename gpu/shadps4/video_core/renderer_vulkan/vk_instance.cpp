@@ -428,6 +428,8 @@ bool Instance::CreateDevice() {
                 .dualSrcBlend = features.dualSrcBlend,
                 .logicOp = features.logicOp,
                 .multiDrawIndirect = features.multiDrawIndirect,
+                // vw: the native renderer (src/native_vk.c) shares this device.
+                .drawIndirectFirstInstance = features.drawIndirectFirstInstance,
                 .depthClamp = features.depthClamp,
                 .depthBiasClamp = features.depthBiasClamp,
                 .fillModeNonSolid = features.fillModeNonSolid,
@@ -435,6 +437,7 @@ bool Instance::CreateDevice() {
                 .wideLines = features.wideLines,
                 .multiViewport = features.multiViewport,
                 .samplerAnisotropy = features.samplerAnisotropy,
+                .textureCompressionBC = features.textureCompressionBC,
                 .vertexPipelineStoresAndAtomics = features.vertexPipelineStoresAndAtomics,
                 .fragmentStoresAndAtomics = features.fragmentStoresAndAtomics,
                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
@@ -462,6 +465,12 @@ bool Instance::CreateDevice() {
             .shaderSharedInt64Atomics = vk12_features.shaderSharedInt64Atomics,
             .shaderFloat16 = vk12_features.shaderFloat16,
             .shaderInt8 = vk12_features.shaderInt8,
+            // vw: bindless textures for the native renderer.
+            .descriptorIndexing = vk12_features.descriptorIndexing,
+            .descriptorBindingSampledImageUpdateAfterBind =
+                vk12_features.descriptorBindingSampledImageUpdateAfterBind,
+            .descriptorBindingPartiallyBound = vk12_features.descriptorBindingPartiallyBound,
+            .runtimeDescriptorArray = vk12_features.runtimeDescriptorArray,
             .scalarBlockLayout = vk12_features.scalarBlockLayout,
             .uniformBufferStandardLayout = vk12_features.uniformBufferStandardLayout,
             .separateDepthStencilLayouts = vk12_features.separateDepthStencilLayouts,

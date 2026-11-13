@@ -74,9 +74,9 @@ Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
     if (const Id offset = buffer.Offset(PointerSize::B32); Sirit::ValidId(offset)) {
         index = ctx.OpIAdd(ctx.U32[1], index, offset);
     }
-    const auto [id, pointer_type] = buffer.Alias(PointerType::U32);
+    const auto [id, pointer_type] = ctx.BufferBase(buffer, PointerType::U32);
     const Id ptr{ctx.OpAccessChain(pointer_type, id, ctx.u32_zero_value, index)};
-    const Id result{ctx.OpLoad(ctx.U32[1], ptr)};
+    const Id result{ctx.BufferLoad(buffer, ctx.U32[1], ptr, 4)};
     return result;
 }
 
@@ -389,13 +389,13 @@ static Id EmitLoadBufferB32xN(EmitContext& ctx, IR::Inst* inst, u32 handle, Id a
         address = ctx.OpIAdd(ctx.U32[1], address, offset);
     }
     const auto& data_types = alias == PointerType::U32 ? ctx.U32 : ctx.F32;
-    const auto [id, pointer_type] = spv_buffer.Alias(alias);
+    const auto [id, pointer_type] = ctx.BufferBase(spv_buffer, alias);
 
     boost::container::static_vector<Id, N> ids;
     for (u32 i = 0; i < N; i++) {
         const Id index_i = i == 0 ? address : ctx.OpIAdd(ctx.U32[1], address, ctx.ConstU32(i));
         const Id ptr_i = ctx.OpAccessChain(pointer_type, id, ctx.u32_zero_value, index_i);
-        const Id result_i = ctx.OpLoad(data_types[1], ptr_i);
+        const Id result_i = ctx.BufferLoad(spv_buffer, data_types[1], ptr_i, 4);
         ids.push_back(result_i);
     }
 
@@ -408,9 +408,9 @@ Id EmitLoadBufferU8(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address) {
     if (const Id offset = spv_buffer.Offset(PointerSize::B8); Sirit::ValidId(offset)) {
         address = ctx.OpIAdd(ctx.U32[1], address, offset);
     }
-    const auto [id, pointer_type] = spv_buffer.Alias(PointerType::U8);
+    const auto [id, pointer_type] = ctx.BufferBase(spv_buffer, PointerType::U8);
     const Id ptr{ctx.OpAccessChain(pointer_type, id, ctx.u32_zero_value, address)};
-    const Id result{ctx.OpLoad(ctx.U8, ptr)};
+    const Id result{ctx.BufferLoad(spv_buffer, ctx.U8, ptr, 1)};
     return result;
 }
 
@@ -419,9 +419,9 @@ Id EmitLoadBufferU16(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address) {
     if (const Id offset = spv_buffer.Offset(PointerSize::B16); Sirit::ValidId(offset)) {
         address = ctx.OpIAdd(ctx.U32[1], address, offset);
     }
-    const auto [id, pointer_type] = spv_buffer.Alias(PointerType::U16);
+    const auto [id, pointer_type] = ctx.BufferBase(spv_buffer, PointerType::U16);
     const Id ptr{ctx.OpAccessChain(pointer_type, id, ctx.u32_zero_value, address)};
-    const Id result{ctx.OpLoad(ctx.U16, ptr)};
+    const Id result{ctx.BufferLoad(spv_buffer, ctx.U16, ptr, 2)};
     return result;
 }
 
@@ -446,9 +446,9 @@ Id EmitLoadBufferU64(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address) {
     if (const Id offset = spv_buffer.Offset(PointerSize::B64); Sirit::ValidId(offset)) {
         address = ctx.OpIAdd(ctx.U32[1], address, offset);
     }
-    const auto [id, pointer_type] = spv_buffer.Alias(PointerType::U64);
+    const auto [id, pointer_type] = ctx.BufferBase(spv_buffer, PointerType::U64);
     const Id ptr{ctx.OpAccessChain(pointer_type, id, ctx.u64_zero_value, address)};
-    const Id result{ctx.OpLoad(ctx.U64, ptr)};
+    const Id result{ctx.BufferLoad(spv_buffer, ctx.U64, ptr, 8)};
     return result;
 }
 

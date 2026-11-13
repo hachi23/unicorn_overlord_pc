@@ -3,7 +3,7 @@
 """Startup graphics options of vw.ini (gpu/shim/vw_graphics.h) for run.py.
 
 The in-game menu and the launcher write them; run.py turns them into environment variables
-(the probe reads render_resolution and aspect_ratio itself) at every start, so "Apply and restart" uses the new values. After a
+(the probe reads render_resolution, aspect_ratio and renderer itself) at every start, so "Apply and restart" uses the new values. After a
 restart the game confirms them (restart_unconfirmed=0) once it shows frames; when a launch
 never did, the next start goes back to the last confirmed values. A launch started by "Apply and
 restart" confirms the one before it: that one reached the game, its menu asked for the restart.
@@ -13,8 +13,9 @@ from pathlib import Path
 
 RESOLUTIONS = ('native', '720p', '900p', '1800p', '4K')
 ASPECT_RATIOS = ('16:9', '21:9', '32:9')
+RENDERERS = ('shadps4', 'native')
 DEFAULTS = {'render_resolution': 'native', 'aspect_ratio': '16:9', 'deferred_readback': '1',
-            'stale_readback': '1', 'async_shaders': '1'}
+            'stale_readback': '1', 'async_shaders': '1', 'renderer': 'shadps4'}
 
 
 def read_ini(path):
@@ -56,6 +57,8 @@ def startup_options(ini):
         options['render_resolution'] = 'native'
     if options['aspect_ratio'] not in ASPECT_RATIOS:
         options['aspect_ratio'] = '16:9'
+    if options['renderer'] not in RENDERERS:
+        options['renderer'] = 'shadps4'
     for key in ('deferred_readback', 'stale_readback', 'async_shaders'):
         options[key] = '0' if options[key] == '0' else '1'
     return options

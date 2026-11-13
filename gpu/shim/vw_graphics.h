@@ -63,6 +63,10 @@ inline constexpr std::array<std::string_view, 10> TextLanguages = {
 /// is 64:27 (2560x1080). Index 0 is the default.
 inline constexpr std::array<std::string_view, 3> AspectRatios = {"16:9", "21:9", "32:9"};
 
+/// Renderers (renderer= in vw.ini, read by the probe at start): shadPS4's emulated GPU, or the
+/// experimental native renderer (src/native_*.c, docs/dev/NATIVE_RENDERER.md; VW_NATIVE=own).
+inline constexpr std::array<std::string_view, 2> Renderers = {"shadps4", "native"};
+
 template <typename T, std::size_t N>
 constexpr int IndexOf(const std::array<T, N>& values, const T& value, int fallback) {
     for (std::size_t i = 0; i < N; ++i) {
@@ -86,6 +90,11 @@ inline int ParseTextLanguage(std::string_view text) {
 /// Index into AspectRatios; unknown text is 16:9.
 inline int ParseAspectRatio(std::string_view text) {
     return IndexOf(AspectRatios, text, 0);
+}
+
+/// Index into Renderers; unknown text is shadps4.
+inline int ParseRenderer(std::string_view text) {
+    return IndexOf(Renderers, text, 0);
 }
 
 /// Frames the GPU command thread may queue ahead of the GPU; 0 = unbounded.

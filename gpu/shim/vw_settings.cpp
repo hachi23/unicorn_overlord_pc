@@ -88,6 +88,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.render_resolution = VwGraphics::ParseResolution(value);
     } else if (key == "aspect_ratio") {
         v.aspect_ratio = VwGraphics::ParseAspectRatio(value);
+    } else if (key == "renderer") {
+        v.renderer = VwGraphics::ParseRenderer(value);
     } else if (key == "deferred_readback") {
         v.deferred_readback = i != 0;
     } else if (key == "stale_readback") {
@@ -152,13 +154,15 @@ void Load() {
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
     v.startup_text_language = v.text_language;
+    v.startup_renderer = v.renderer;
 }
 
 bool GraphicsNeedRestart() {
     const auto& v = Get();
     return v.render_resolution != v.startup_render_resolution || v.aspect_ratio != v.startup_aspect_ratio ||
            v.deferred_readback != v.startup_deferred_readback ||
-           v.stale_readback != v.startup_stale_readback || v.text_language != v.startup_text_language;
+           v.stale_readback != v.startup_stale_readback || v.text_language != v.startup_text_language ||
+           v.renderer != v.startup_renderer;
 }
 
 // Written beside vw.ini, then renamed over it: a crash or a suspend while writing kept an empty
@@ -187,7 +191,7 @@ void Save() {
                  "display_mode=%s\nvsync=%d\nasync_shaders=%d\n"
                  "fsr1=%d\nanime4k=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"
                  "render_resolution=%s\naspect_ratio=%s\ndeferred_readback=%d\nstale_readback=%d\n"
-                 "text_language=%s\nrestart_unconfirmed=%d\nstick_dead_zone=%d\n",
+                 "text_language=%s\nrestart_unconfirmed=%d\nstick_dead_zone=%d\nrenderer=%s\n",
                  VwGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), int(v.async_shaders.load()),
                  int(v.fsr1.load()), v.anime4k.load(), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
@@ -201,7 +205,9 @@ void Save() {
                  VwGraphics::TextLanguages[std::clamp(v.text_language.load(), 0,
                                                         int(VwGraphics::TextLanguages.size()) - 1)]
                      .data(),
-                 int(v.restart_unconfirmed.load()), v.stick_dead_zone.load());
+                 int(v.restart_unconfirmed.load()), v.stick_dead_zone.load(),
+                 VwGraphics::Renderers[std::clamp(v.renderer.load(), 0, int(VwGraphics::Renderers.size()) - 1)]
+                     .data());
     {
         std::scoped_lock lock{text_mutex};
         for (const char* key : TextKeys) {

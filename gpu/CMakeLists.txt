@@ -208,7 +208,7 @@ endif()
 # vw: with a static vwgpu (Windows, VW_STATIC) the loader and the HLE runtime are linked here,
 # where CMake knows its dependencies (build.sh builds them with ninja).
 if (WIN32 OR VW_STATIC)
-    file(GLOB VW_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
+    file(GLOB VW_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c ../src/native*.c)
     file(GLOB VW_ATRAC9 CONFIGURE_DEPENDS ../third_party/LibAtrac9/C/src/*.c)
     add_library(atrac9 STATIC ${VW_ATRAC9})
     target_compile_options(atrac9 PRIVATE -w)
@@ -328,3 +328,9 @@ target_link_libraries(page-state-test PRIVATE Boost::headers)
 target_compile_options(page-state-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 
 
+# vw: the native renderer's ahead-of-time shader conversion (tools/native/aot.py runs it).
+add_executable(shader-aot EXCLUDE_FROM_ALL ../tools/native/aot/shader_aot.cpp
+    ../tests/test_gpu_runtime_stubs.cpp)
+target_include_directories(shader-aot PRIVATE shim shadps4 third_party/gcn/include)
+target_link_libraries(shader-aot PRIVATE vwgpu)
+target_compile_options(shader-aot PRIVATE -fPIC)
