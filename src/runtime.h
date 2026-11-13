@@ -110,6 +110,8 @@ void runtime_pad_report(void);
 void runtime_pad_on_button_icons(void (*listener)(int style));
 uintptr_t runtime_rtc_resolve(const char *name);
 const char *runtime_file_user_dir(void);
+/* The game folder mounted as /app0 (the player's dump). */
+const char *runtime_file_app_dir(void);
 void runtime_savedata_configure(const char *title);
 uintptr_t runtime_savedata_resolve(const char *name);
 void runtime_savedata_report(void);

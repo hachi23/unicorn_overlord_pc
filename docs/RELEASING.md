@@ -14,12 +14,13 @@ Every run keeps both files as workflow artifacts (Actions tab → the run → Ar
 request can be tested before it is merged. Both packages store their version (`git describe`) in
 `VERSION`; `run.py` writes it at the top of every run log.
 
-The Vulkan headers, glslang, VMA and robin-map versions are pinned in the workflow's `env:`
+The Vulkan headers and glslang versions are pinned in the workflow's `env:`
 block. The static libraries (FFmpeg, SDL3, ...) are pinned in `packaging/deps.sh`. Both are
 cached; changing a pin rebuilds it.
 
 Both jobs run the C++ tests and platform-specific native tests via
-`packaging/test-native.sh`, then Python unittest discovery. Linux also runs the C runtime
+`packaging/test-native.sh`, then Python unittest discovery. Linux also runs `build.sh --test`,
+whose shader translator test needs `spirv-val` (the `spirv-tools` package). Linux also runs the C runtime
 and loader tests. The Vulkan cache test runs with Mesa lavapipe on Linux. Windows builds
 it but skips execution because hosted runners have no Vulkan ICD; the other native tests
 run on both platforms. No game dump or physical GPU is needed. Report skips separately.

@@ -4,10 +4,7 @@ These are unmodified upstream notices for the versions pinned in the build workf
 
 | File | Upstream version and source |
 |---|---|
-| Boost.txt | boostorg/boost, boost-1.86.0, LICENSE_1_0.txt |
 | Vulkan-Headers.txt, Apache-2.0.txt, MIT.txt | KhronosGroup/Vulkan-Headers, v1.4.357, LICENSE.md and LICENSES/ |
-| VulkanMemoryAllocator.txt | GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator, v3.4.0, LICENSE.txt |
-| robin-map.txt | Tessil/robin-map, v1.4.0, LICENSE |
 | glslang.txt | KhronosGroup/glslang, 16.0.0, LICENSE.txt |
 | Tcl-8.6.txt | tcltk/tcl, core-8-6-18, license.terms (8.6 series) |
 | Tcl-9.0.txt | tcltk/tcl, core-9-0-4, license.terms (9.0 series) |

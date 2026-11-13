@@ -73,10 +73,7 @@ class NoticeTests(unittest.TestCase):
             paths = list(notices.VENDORED.values())
             paths += [f'out/deps/build/{name}/LICENSE' for name in notices.STATIC]
             paths += ['packaging/licenses/Apache-2.0.txt',
-                      'gpu/shadps4/video_core/host_shaders/fsr/ffx_a.h',
-                      'gpu/shadps4/video_core/host_shaders/fsr/ffx_fsr1.h',
-                      'gpu/third_party/gcn/include/gcn/si_ci_vi_merged_offset.h',
-                      'gpu/third_party/gcn/include/gcn/si_ci_vi_merged_pm4_it_opcodes.h']
+                      'gpu/platform/shaders/ffx_a.h', 'gpu/platform/shaders/ffx_fsr1.h']
             for source in paths:
                 path = root / source
                 path.parent.mkdir(parents=True, exist_ok=True)

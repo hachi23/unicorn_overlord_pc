@@ -12,6 +12,7 @@
 #include "unicorn_ultrawide.h"
 #include "unicorn_button_icons.h"
 #include "unicorn_native_settings.h"
+#include "native_gfx.h"
 #include "gpu/vwgpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
@@ -699,7 +700,7 @@ static void install_unicorn_native_settings(const char *app0) {
 static const unsigned char unicorn_text_language_signature[] = {
     0x8d, 0x48, 0xf7, 0x83, 0xc0, 0xfd, 0xba, 0x07, 0x00, 0x00, 0x00, 0x83, 0xf9, 0x03, 0x0f, 0x42, 0xd0};
 
-/* The game's language for a TextLanguages key (gpu/shim/vw_graphics.h), -1 for auto. */
+/* The game's language for a TextLanguages key (gpu/platform/vw_graphics.h), -1 for auto. */
 static int unicorn_text_language_value(const char *text) {
     static const struct { const char *key; int value; } languages[] = {
         {"japanese", 0}, {"english", 1}, {"french", 2}, {"spanish", 3}, {"german", 4}, {"italian", 5},
@@ -1093,6 +1094,15 @@ int main(int argc, char **argv) {
     install_unicorn_cri_hook(app0, segments, ns);
     install_unicorn_bubble_text(app0, segments, ns);
     if (gpu_enabled) install_unicorn_native_settings(app0);
+    /* The renderer (src/native_gfx.h) hooks the game's graphics library: v01.04 only for now. */
+    if (gpu_enabled) {
+        if (!unicorn_known_build(app0))
+            fail("this build draws only Unicorn Overlord CUSA36381 v01.04 or the Hong Kong 1.05 package");
+        const size_t stub_bytes = 16 * page_size;
+        unsigned char *stubs = allocate(stub_bytes);
+        if (!native_gfx_install(image, stubs, stub_bytes, unicorn_address)) fail("the renderer did not start (see the lines above)");
+        protect(stubs, stub_bytes, 5);
+    }
     install_unicorn_text_language(app0);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));

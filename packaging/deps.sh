@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Static third-party libraries for release builds (build.sh --static, Windows packaging):
-# out/deps/prefix gets zlib, xxHash, fmt, Zydis, SDL3 and a minimal FFmpeg (the decoders,
-# demuxers and parsers the runtime and the AvPlayer use; nothing else). vwport then only needs
+# out/deps/prefix gets zlib, SDL3 and a minimal FFmpeg (the decoders,
+# demuxers and parsers the runtime (movies, MP3) and the PNG reader use; nothing else). vwport then only needs
 # what every system has: libc, the Vulkan loader and (Linux) X11. Sources are pinned by
 # SHA-256; a library is rebuilt only when its version line below changes.
 set -euo pipefail
@@ -42,10 +42,6 @@ CMAKE=(cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$NATIVE
 SOURCES=(
 "zlib 1.3.1 https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
 "nasm 2.16.03 https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/nasm-2.16.03.tar.xz 1412a1c760bbd05db026b6c0d1657affd6631cd0a63cddb6f73cc6d4aa616148"
-"xxhash 0.8.4 https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.4.tar.gz 5738270935e7c3d38a79b3adf7c9692566ce7895a25f67de43ad52ab504acd32"
-"fmt 12.2.0 https://github.com/fmtlib/fmt/archive/refs/tags/12.2.0.tar.gz 8b852bb5aa6e7d8564f9e81394055395dd1d1936d38dfd3a17792a02bebd7af0"
-"zycore 0b2432ced0884fd152b471d97ecf0258ff4d859f https://github.com/zyantific/zycore-c/archive/0b2432ced0884fd152b471d97ecf0258ff4d859f.tar.gz 698e4623e661db312eb9da327519f53f0a9dd7fbbfacf02159687bca62369467"
-"zydis 4.1.1 https://github.com/zyantific/zydis/archive/refs/tags/v4.1.1.tar.gz 45c6d4d499a1cc80780f7834747c637509777c01dca1e98c5e7c0bfaccdb1514"
 "sdl3 3.4.18 https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz 9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3"
 "ffmpeg 9.0.2 https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e"
 )
@@ -95,29 +91,6 @@ if ! command -v nasm >/dev/null && needs nasm; then
     quiet nasm bash -c "cd '$src' && ./configure --prefix='$PREFIX' CC='$CC' && make -j$JOBS nasm"
     install -D -m755 "$src/nasm" "$PREFIX/bin/nasm"
     done_ nasm
-fi
-if needs xxhash; then
-    src=$(unpack xxhash)
-    quiet xxhash "${CMAKE[@]}" -S "$src/build/cmake" -B "$src/out" -DXXHASH_BUILD_XXHSUM=OFF
-    quiet xxhash ninja -C "$src/out" install
-    done_ xxhash
-fi
-if needs fmt; then
-    src=$(unpack fmt)
-    quiet fmt "${CMAKE[@]}" -S "$src" -B "$src/out" -DFMT_TEST=OFF -DFMT_DOC=OFF
-    quiet fmt ninja -C "$src/out" install
-    done_ fmt
-fi
-if needs zydis; then
-    src=$(unpack zycore)
-    quiet zydis "${CMAKE[@]}" -S "$src" -B "$src/out" -DZYCORE_BUILD_TESTS=OFF -DZYCORE_BUILD_EXAMPLES=OFF
-    quiet zydis ninja -C "$src/out" install
-    src=$(unpack zydis)
-    quiet zydis "${CMAKE[@]}" -S "$src" -B "$src/out" -DZYAN_SYSTEM_ZYCORE=ON -DZYDIS_BUILD_TOOLS=OFF \
-        -DCMAKE_C_FLAGS="-I$NATIVE/include" \
-        -DZYDIS_BUILD_EXAMPLES=OFF -DZYDIS_BUILD_DOXYGEN=OFF -DZYDIS_BUILD_MAN=OFF
-    quiet zydis ninja -C "$src/out" install
-    done_ zydis
 fi
 if needs sdl3; then
     src=$(unpack sdl3)

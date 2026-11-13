@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Startup graphics options of vw.ini (gpu/shim/vw_graphics.h) for run.py.
+"""Startup graphics options of vw.ini (gpu/platform/vw_graphics.h) for run.py.
 
-The in-game menu and the launcher write them; run.py turns them into environment variables
-(the probe reads render_resolution and aspect_ratio itself) at every start, so "Apply and restart" uses the new values. After a
+The in-game menu and the launcher write them; the probe reads them at every start, so "Apply
+and restart" uses the new values. After a
 restart the game confirms them (restart_unconfirmed=0) once it shows frames; when a launch
 never did, the next start goes back to the last confirmed values. A launch started by "Apply and
 restart" confirms the one before it: that one reached the game, its menu asked for the restart.
@@ -13,8 +13,7 @@ from pathlib import Path
 
 RESOLUTIONS = ('native', '720p', '900p', '1800p', '4K')
 ASPECT_RATIOS = ('16:9', '21:9', '32:9')
-DEFAULTS = {'render_resolution': 'native', 'aspect_ratio': '16:9', 'deferred_readback': '1',
-            'stale_readback': '1', 'async_shaders': '1'}
+DEFAULTS = {'render_resolution': 'native', 'aspect_ratio': '16:9'}
 
 
 def read_ini(path):
@@ -56,8 +55,6 @@ def startup_options(ini):
         options['render_resolution'] = 'native'
     if options['aspect_ratio'] not in ASPECT_RATIOS:
         options['aspect_ratio'] = '16:9'
-    for key in ('deferred_readback', 'stale_readback', 'async_shaders'):
-        options[key] = '0' if options[key] == '0' else '1'
     return options
 
 
@@ -91,8 +88,3 @@ def prepare(config, state_path, restarted=False):
     Path(state_path).write_text(json.dumps(state, indent=2), encoding='utf-8')
     return options, reverted
 
-
-def environment(options):
-    return {'VW_DEFERRED_READBACK': options['deferred_readback'],
-            'VW_STALE_READBACK': options['stale_readback'],
-            'VW_ASYNC_SHADERS': options['async_shaders']}

@@ -27,9 +27,6 @@ env:
   # Pinned to the versions the port is developed with.
   VULKAN_HEADERS: v1.4.357
   GLSLANG: 16.0.0
-  VMA: v3.4.0
-  ROBIN_MAP: v1.4.0
-  BOOST: 1.86.0  # headers only; Ubuntu's 1.74 small_vector does not convert to std::span
 
 jobs:
   linux:
@@ -48,7 +45,8 @@ jobs:
           sudo apt-get install -y gcc-14 g++-14 ninja-build pkg-config nasm python3-venv python3-tk desktop-file-utils \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev \
             libxfixes-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev \
-            libegl-dev libgl-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libvulkan-dev mesa-vulkan-drivers
+            libegl-dev libgl-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libvulkan-dev mesa-vulkan-drivers \
+            spirv-tools
           pip install --user 'cmake>=3.28'
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
@@ -59,9 +57,9 @@ jobs:
           path: |
             ~/prefix
             out/deps
-          key: linux-${{ env.BOOST }}-${{ env.VULKAN_HEADERS }}-${{ env.GLSLANG }}-${{ env.VMA }}-${{ env.ROBIN_MAP }}-${{ hashFiles('packaging/deps.sh') }}
+          key: linux-${{ env.VULKAN_HEADERS }}-${{ env.GLSLANG }}-${{ hashFiles('packaging/deps.sh') }}
 
-      - name: Vulkan headers, glslang, VMA, robin-map
+      - name: Vulkan headers, glslang
         run: |
           prefix=$HOME/prefix
           if [ ! -f "$prefix/.done" ]; then
@@ -73,10 +71,6 @@ jobs:
             }
             build KhronosGroup/Vulkan-Headers "$VULKAN_HEADERS"
             build KhronosGroup/glslang "$GLSLANG" -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF
-            build GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator "$VMA"
-            build Tessil/robin-map "$ROBIN_MAP"
-            curl -fsSL "https://archives.boost.io/release/$BOOST/source/boost_${BOOST//./_}.tar.gz" | \
-              tar -xz -C "$prefix/include" --strip-components=1 "boost_${BOOST//./_}/boost"
             touch "$prefix/.done"
           fi
           echo "$prefix/bin" >> "$GITHUB_PATH"

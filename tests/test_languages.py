@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The text languages are listed in C (src/probe.c), C++ (gpu/shim/vw_graphics.h, the menu) and
+"""The text languages are listed in C (src/probe.c), C++ (gpu/platform/vw_graphics.h, the menu) and
 Python (scripts/game_profiles.py); this checks that the lists agree."""
 import re
 import unittest
@@ -17,7 +17,7 @@ class LanguagesTest(unittest.TestCase):
         table = re.search(r'languages\[\] = \{(.*?)\};', probe, re.S).group(1)
         self.values = {key: int(value) for key, value in re.findall(r'\{"(\w+)", (\d+)\}', table)}
         self.archives = re.findall(r'"(\w*)"', re.search(r'archives\[\] = \{(.*?)\};', probe, re.S).group(1))
-        header = (ROOT / 'gpu/shim/vw_graphics.h').read_text(encoding='utf-8')
+        header = (ROOT / 'gpu/platform/vw_graphics.h').read_text(encoding='utf-8')
         self.menu = re.findall(r'"(\w+)"', re.search(r'TextLanguages = \{(.*?)\};', header, re.S).group(1))
         self.slots = PROFILES['CUSA36381']['mod_archive_merge']['slots']
 

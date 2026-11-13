@@ -1,5 +1,10 @@
 # Handoff (2026-11-10)
 
+**Graphics (v1.6.0, 2026-11-13): the port draws with its own renderer (experimental); shadPS4 is
+gone. Continue graphics work from [NATIVE_RENDERER.md](NATIVE_RENDERER.md).** Paths below that
+name `gpu/shim` or `gpu/shadps4` are history: the window, settings and menu are now in
+`gpu/platform/`.
+
 Start here. The sections below this one are older (2026-10-20 and before) and kept for history.
 
 ## #74 found (2026-11-10, branch `claude/issue-74-amd-float`)
@@ -71,7 +76,7 @@ unpacked into a session scratchpad but not run (downloaded driver code needs the
 - **#74 iGPU:** render target clears that the game does with a compute fill are now image clears
   (`ExecuteFillShaderHLE`, vk_shader_hle.cpp; toggle 1 << 53). Vega 8 battle map 25.8 -> 32.5
   FPS native, 37.6 -> 46.2 FPS at 720p; RX 560X unchanged at 60. Details and what is left
-  (the game's own 127-sample blur at a fixed 960x540) in [parallel_gpu.md](parallel_gpu.md).
+  (the game's own 127-sample blur at a fixed 960x540) in `parallel_gpu.md` (deleted with shadPS4 in v1.6.0; see git history).
   Profile with `VW_GPU_PROFILE=1`; pick the iGPU with
   `MESA_VK_DEVICE_SELECT=1002:15dd MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE=1`.
 - **#50 keyboard prompts:** F1 shows a table of which key is which pad button (built from the
@@ -173,7 +178,7 @@ archive building.
 # Handoff (2026-10-20, older)
 
 Read this first. The port's history and reverse-engineering notes are in
-[unicorn/HANDOFF.md](unicorn/HANDOFF.md), the GPU pipeline in [parallel_gpu.md](parallel_gpu.md).
+[unicorn/HANDOFF.md](unicorn/HANDOFF.md), the GPU pipeline in `parallel_gpu.md` (deleted with shadPS4 in v1.6.0; see git history).
 Development moves to the Windows desktop (7800X3D, RX 9070 XT) from here; build there with
 MSYS2 CLANG64 ([../../packaging/windows/README.md](../../packaging/windows/README.md)).
 

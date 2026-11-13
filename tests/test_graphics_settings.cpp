@@ -32,7 +32,6 @@ int main() {
     assert(G::ParseTextLanguage("japanese") == 1 && G::ParseTextLanguage("korean") == 4 &&
            G::ParseTextLanguage("english") == 5 && G::ParseTextLanguage("italian") == 9 &&
            G::ParseTextLanguage("klingon") == 0);
-    assert(G::ParseFramesQueued(2) == 2 && G::ParseFramesQueued(0) == 0 && G::ParseFramesQueued(5) == 1);
     assert(G::ParseRcasStrength(100) == 100 && G::ParseRcasStrength(101) == 75 && G::ParseRcasStrength(-1) == 75);
     assert(G::RcasAttenuation(100) == 0.0f && G::RcasAttenuation(0) == 2.0f && G::RcasAttenuation(75) == 0.5f);
     assert(G::FsrPassRuns(true, false, 1280, 720, 2560, 1440) && !G::FsrPassRuns(false, false, 1280, 720, 2560, 1440));
@@ -55,17 +54,18 @@ int main() {
     const char* path = "graphics-settings-test.ini";
     {
         std::ofstream out(path);
-        out << "display_mode=borderless\nvsync=0\nfps_limit=240\nasync_shaders=0\n"
+        // fps_limit, renderer and the readback/shader/queue keys of the old renderer are gone.
+        out << "display_mode=borderless\nvsync=0\nfps_limit=240\nasync_shaders=0\nrenderer=shadps4\n"
                "render_resolution=1800p\naspect_ratio=21:9\ndeferred_readback=0\nstale_readback=1\n"
                "fsr1=1\nanime4k=1\nrcas=0\nrcas_strength=40\nframes_queued=2\ntext_language=simplified_chinese\n";
     }
     _putenv_s("VW_CONFIG", path);
-    _putenv_s("VW_ASYNC_SHADERS", "");
+    _putenv_s("VW_VSYNC", "");
     auto& v = VwSettings::Get();
     VwSettings::Load();
-    assert(v.display_mode == G::Borderless && !v.vsync && !v.async_shaders);
-    assert(v.render_resolution == 3 && v.aspect_ratio == 1 && !v.deferred_readback && v.stale_readback);
-    assert(v.fsr1 && !v.rcas && v.rcas_strength == 40 && v.frames_queued == 2);
+    assert(v.display_mode == G::Borderless && !v.vsync);
+    assert(v.render_resolution == 3 && v.aspect_ratio == 1);
+    assert(v.fsr1 && !v.rcas && v.rcas_strength == 40);
     assert(v.anime4k == G::Anime4kFast);
     assert(v.text_language == 3 && !VwSettings::GraphicsNeedRestart());
     v.text_language = 1;  // applied by the probe at start
@@ -82,25 +82,26 @@ int main() {
 
     VwSettings::Save();
     const std::string saved = Read(path);
-    for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "async_shaders=0\n",
-                             "render_resolution=1800p\n", "aspect_ratio=21:9\n", "deferred_readback=0\n",
-                             "stale_readback=1\n", "fsr1=1\n", "anime4k=1\n", "rcas=0\n", "rcas_strength=40\n",
-                             "frames_queued=2\n", "text_language=simplified_chinese\n"}) {
+    for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "render_resolution=1800p\n",
+                             "aspect_ratio=21:9\n", "fsr1=1\n", "anime4k=1\n", "rcas=0\n", "rcas_strength=40\n",
+                             "text_language=simplified_chinese\n"}) {
         assert(saved.find(line) != std::string::npos);
     }
-    assert(saved.find("fps_limit") == std::string::npos);  // removed: the game runs at its own 60
+    for (const char* gone : {"fps_limit", "async_shaders", "renderer", "deferred_readback", "stale_readback",
+                             "frames_queued"}) {
+        assert(saved.find(gone) == std::string::npos);
+    }
 
     {
         std::ofstream out(path);
         out << "display_mode=huge\nfps_limit=7\nrender_resolution=8K\naspect_ratio=5:4\n"
-               "rcas_strength=250\nframes_queued=9\nanime4k=7\n";
+               "rcas_strength=250\nanime4k=7\nvsync=0\n";
     }
-    _putenv_s("VW_ASYNC_SHADERS", "1");  // the environment still wins at start
-    v.async_shaders = false;
+    _putenv_s("VW_VSYNC", "1");  // the environment still wins at start
     VwSettings::Load();
     assert(v.display_mode == G::Windowed && v.render_resolution == 0 && v.aspect_ratio == 0);
-    assert(v.rcas_strength == 75 && v.frames_queued == 1 && v.anime4k == G::Anime4kOff);
-    assert(v.async_shaders);
+    assert(v.rcas_strength == 75 && v.anime4k == G::Anime4kOff);
+    assert(v.vsync);
 
     // The rows of the game's Options screen (vwgpu.h).
     const VwgpuSettingRow* rows = nullptr;

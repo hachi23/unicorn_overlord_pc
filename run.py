@@ -222,7 +222,6 @@ def main():
     graphics, reverted = graphics_options.prepare(env['VW_CONFIG'], out / 'graphics_state.json', restarted)
     if reverted:
         LOG.write('Graphics: the last restart never reached the game; previous options restored')
-    env.update(graphics_options.environment(graphics))
     support = {**diagnostics.system_info(), 'port_version': port_version(), 'graphics': graphics}
     LOG.support = support
     diagnostics.write_summary(LOG.path, support)

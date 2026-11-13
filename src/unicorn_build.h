@@ -18,7 +18,11 @@ static const struct { uint32_t start, end; int32_t shift; } unicorn_hk0105_range
     {0x2b550, 0x2b5d1, 384},     /* FUN_0002b590, the text lookup */
     {0x2c590, 0x2c591, 384},     /* FUN_0002c590, a text object's text */
     {0x3d9bd, 0x3e31d, 384},     /* render size getters */
+    {0x3ede0, 0x3ede1, 400},     /* fill memory (native renderer hook) */
     {0x1fdf80, 0x1fe000, 944},   /* CRILAYLA decompressor */
+    {0x20df20, 0x20df21, 944},   /* detile a surface region (native renderer hook) */
+    {0x2146d0, 0x215b11, 944},   /* Gnmx: context state, draw, dispatch (native renderer hooks) */
+    {0x218ae0, 0x21c1f1, 960},   /* Gnmx: LCUE resources, shaders, submit, viewport (same) */
     {0x233df4, 0x234d1b, 960},   /* text language, 2D ortho */
     {0x2377d0, 0x2379f0, 960},   /* battle map size limit */
     {0x2e0d9a, 0x2e186b, 2544},  /* battle map camera clamp */

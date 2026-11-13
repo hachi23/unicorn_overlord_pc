@@ -33,7 +33,8 @@ labels: bug
      Pick the timestamped log if the game was restarted after the failure.
      Review for personal paths/usernames before posting. Do not upload the whole data folder.
      Hang: also run with VW_HANG_DUMP=5 and attach the output.
-     Graphics: add a screenshot and VW_GPU_LOG=debug output.
+     Graphics: add a screenshot; the log lines that start with "Native:" are the useful ones
+     (the renderer is experimental: a picture of the same place with v1.5.2 helps a lot).
      Needs a route to reach: record it with VW_PAD_RECORD=<file> (F9) and attach the file. -->
 
 **For performance or stutter reports**

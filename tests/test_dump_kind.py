@@ -64,7 +64,7 @@ class DumpKindTest(unittest.TestCase):
         keys = {'auto', 'japanese', 'traditional_chinese', 'simplified_chinese', 'korean'}
         for dump in vw_launcher.GAMES['unicorn']['dumps'].values():
             for key, _ in dump['languages']:
-                self.assertIn(key, keys)  # gpu/shim/vw_graphics.h TextLanguages
+                self.assertIn(key, keys)  # gpu/platform/vw_graphics.h TextLanguages
 
 
 if __name__ == '__main__':

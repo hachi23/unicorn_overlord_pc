@@ -1,5 +1,5 @@
-/* C interface of the GPU library (gpu/): shadPS4's Liverpool/Vulkan video core,
- * GnmDriver, VideoOut and kernel event queues, adapted to the native loader. */
+/* C interface of the GPU library (gpu/platform/): window, Vulkan device, presenter and overlay,
+ * and the PS4 GnmDriver, VideoOut and kernel event queue libraries. */
 #ifndef VWGPU_H
 #define VWGPU_H
 #include <stdint.h>
@@ -58,6 +58,17 @@ float vwgpu_setting_value(int row);
 void vwgpu_setting_set(int row, float value);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned vwgpu_symbol_count(void);
+/* The native renderer (src/native_vk.c) shares the presenter's Vulkan device: its handles
+ * (VkInstance, VkPhysicalDevice, VkDevice, VkQueue as pointers) and graphics queue family.
+ * 0 before the presenter exists. Submits to the queue hold vwgpu_queue_lock. */
+int vwgpu_vulkan_handles(void **instance, void **physical, void **device, void **queue, uint32_t *family);
+void vwgpu_queue_lock(void);
+void vwgpu_queue_unlock(void);
+/* Implemented by the native renderer: the image it rendered for the display buffer at that
+ * address (VkImage as a pointer, R8G8B8A8, created with mutable format), ready for a
+ * fragment shader to sample in SHADER_READ_ONLY_OPTIMAL once earlier queue work completes;
+ * 0 when it has none (the presenter then uses its own). */
+int native_present_image(uint64_t address, void **image, uint32_t *width, uint32_t *height);
 #ifdef __cplusplus
 }
 #endif

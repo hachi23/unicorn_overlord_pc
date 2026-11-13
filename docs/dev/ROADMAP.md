@@ -11,7 +11,7 @@ played (see `CONTRIBUTING.md`). Order: legal first, then small wins, then the la
 | # | Step | Size | Status |
 |---|---|---|---|
 | 1 | Third-party licenses in the download | S | Implemented; inspect release artifacts |
-| 2 | Clear message when the GPU device is lost | XS | Implemented; injected fatal-path test |
+| 2 | Clear message when the GPU device is lost | XS | Implemented; since v1.6.0 in `src/native_vk.c` and `gpu/platform/presenter.cpp` |
 | 3 | Versioned releases and a launcher update check | S | Planned |
 | 4 | Add to Steam, desktop shortcut, `--play` | S | Planned |
 | 5 | Controls page and `input.ini` | M | Planned |
@@ -21,7 +21,7 @@ played (see `CONTRIBUTING.md`). Order: legal first, then small wins, then the la
 ## 1. Third-party licenses in the download
 
 **Why.** The package bundles FFmpeg, SDL3, fmt, Zydis, xxHash and zlib (statically linked, see
-`packaging/deps.sh`), plus shadPS4, Dear ImGui, sirit, magic_enum, miniz, xbyak, LibAtrac9, VMA,
+`packaging/deps.sh`; since v1.6.0 only FFmpeg, SDL3 and zlib), plus Dear ImGui, LibAtrac9 (shadPS4, sirit, magic_enum, miniz, xbyak, VMA up to v1.5.2),
 the FSR 1 / CAS shaders, the DejaVu font and the PyInstaller-bundled Python and Pillow. Most of
 their licenses require the notice to travel with the binaries. Today `dist/` holds only our
 `LICENSE`.

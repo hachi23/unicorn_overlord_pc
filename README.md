@@ -7,7 +7,7 @@ A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlo
 
 | Dump | State |
 |---|---|
-| CUSA36381 (Asia), app 01.04 (base game with the 1.04 update; Japanese, Chinese or, with the fan English patch, English text) | Prologue, chapter 1 and its first battle played; saving and loading work; every system function the game imports is implemented |
+| CUSA36381 (Asia), app 01.04 (base game with the 1.04 update; Japanese, Chinese or, with the fan English patch, English text), or the Hong Kong 1.05 package | Prologue, chapter 1 and its first battle played; saving and loading work; every system function the game imports is implemented |
 
 > **Work in progress.** The game has not been played to the end, and it runs at about 50-60 FPS
 > on a mid-range laptop. Read [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) before reporting a bug.
@@ -25,10 +25,12 @@ PC doesn't have is the PS4's operating system and GPU, so this project supplies 
 3. **Runtime** (`src/runtime_*.c`): about 700 PS4 system functions the game calls (memory,
    threads, files, audio, video decoding, controller, saves, and offline stand-ins for PSN),
    written for these games.
-4. **GPU** (`gpu/`): the [shadPS4](https://github.com/shadps4-emu/shadPS4) video core turns the
-   PS4's GPU commands and shaders into Vulkan, with this port's multi-threaded draw pipeline on top.
+4. **Renderer** (`src/native_*.c`, `gpu/platform/`, **experimental**): the game's calls into its
+   graphics library are taken over and drawn directly with Vulkan; its GPU shaders are translated
+   to SPIR-V from your `eboot.bin` at the first start. There is no GPU emulation (see
+   [below](#renderer-experimental)).
 5. **Start program** (`launcher/`): a one-time setup that installs your dump, then starts the
-   game; the in-game menu is Dear ImGui (`gpu/shim/vw_overlay.cpp`).
+   game; the in-game menu is Dear ImGui (`gpu/platform/vw_overlay.cpp`).
 
 Only the dump listed above is supported.
 
@@ -53,8 +55,10 @@ builds and releases are made.
 ## Requirements
 
 - 64-bit Linux, or Windows 10 (1903+) / 11.
-- A Vulkan 1.3 GPU with sparse buffers (`sparseBinding`, `sparseResidencyBuffer`). AMD and NVIDIA
-  have them; Intel integrated graphics older than Gen12 (UHD 620 and alike) lack them on Linux.
+- A Vulkan 1.3 GPU with buffer device addresses, descriptor indexing, 64-bit shader integers,
+  subgroup ballot/vote and push descriptors (AMD, NVIDIA and Intel GPUs of the last years with a
+  current driver). If one is missing the game stops at start and the log names it
+  (`Native: <GPU> has no ...`). Sparse buffers are no longer needed (v1.6.0).
 - Your own dump of the game with the 1.04 update merged in (or the Hong Kong 1.05 package), as a folder containing `eboot.bin`,
   `sce_module`, `sce_sys` and the `.CPK` files (about 7 GB).
 
@@ -141,6 +145,28 @@ template and attach:
   cut off or misplaced (Win+Shift+S on Windows, Spectacle or your desktop's tool on Linux);
 - your monitor's resolution and the display mode (Windowed, Borderless or Fullscreen).
 
+### Renderer (experimental)
+
+Since v1.6.0 the port draws with its own renderer, and the shadPS4 GPU emulation it used before is
+gone. The game's calls into its graphics library are recorded and drawn directly with Vulkan;
+the PS4 command buffers are no longer decoded. It is faster, most of all on weak GPUs: on an
+RX 560X the New Game opening holds 60 FPS where v1.5.2 dropped to 36-54, and on a Vega 8
+integrated GPU it runs 46-60 FPS where v1.5.2 ran 38-59.
+
+On its first start it translates the game's shaders from your `eboot.bin` into
+`<user data>/native_shaders` (a few seconds; again after a game or port update). Nothing from the
+game is shipped with the port. Every display option works with it: render resolution, aspect
+ratio, FSR 1, sharpening and Anime4K, and so do the text languages, the English patch, mods and
+patches. The menu shows **Renderer: Native (experimental)** under About.
+
+**It is experimental.** It was compared picture by picture with v1.5.2 through the prologue and
+chapter 1 (story scenes, the battle map, menus, saving and loading, the English patch, French
+from the Switch text, 21:9 and 32:9, the Hong Kong 1.05 package) on AMD GPUs on Linux. Windows,
+NVIDIA and Intel GPUs, the Steam Deck and later chapters have not been checked by the developer.
+If something is missing or looks wrong, open an issue with the diagnostics ZIP and a screenshot;
+a screenshot of the same place with **v1.5.2** (the last release with the old renderer, still on
+the releases page) helps most. The log lines that start with `Native:` are the useful ones.
+
 ### Other languages (experimental)
 
 **New to this? Start with [docs/LANGUAGES.md](docs/LANGUAGES.md)**: which language you get, how
@@ -208,8 +234,8 @@ On Windows, build in an MSYS2 CLANG64 shell. See
 [packaging/windows/README.md](packaging/windows/README.md).
 
 To package a release, run `python packaging/package.py unicorn`. On Linux it builds
-`packaging/deps.sh` (pinned static FFmpeg with only the decoders the port uses, SDL3, fmt, Zydis,
-xxHash, zlib; a few minutes the first time) and a `vwport` with them and the GPU library linked
+`packaging/deps.sh` (pinned static FFmpeg with only the decoders the port uses, SDL3, zlib; a few
+minutes the first time) and a `vwport` with them and the GPU library linked
 in (`build.sh --static`), which needs only libc, libm and the Vulkan loader. `dist/<Title> PC/`
 then holds the start program, `_internal/` (its Python runtime, the runtime scripts and
 `vwport`), `LICENSE`, `licenses/` and `README.txt`. Releases also retain matching debug symbols and an archive of the source.
@@ -218,14 +244,15 @@ then holds the start program, `_internal/` (its Python runtime, the runtime scri
 
 ```bash
 python -m unittest discover -s tests
-bash build.sh --test
+bash build.sh --test                           # C tests; the shader translator test needs spirv-val
+bash tools/native/check.sh [path/to/eboot.bin] # everything, and every game shader through spirv-val
 ```
 
 The C++ tests are `EXCLUDE_FROM_ALL` targets in [gpu/CMakeLists.txt](gpu/CMakeLists.txt). For
 example:
 
 ```bash
-ninja -C out/gpu graphics-settings-test && out/gpu/graphics-settings-test
+ninja -C out/gpu gpu-platform-test && out/gpu/gpu-platform-test
 ```
 
 To check that every system function a game imports is implemented, without starting it:
@@ -241,17 +268,20 @@ out/vwport out/boot-linked.bin --app0 <game folder> --check-imports
 | Preparation | `scripts/` | Reads `eboot.bin`, applies its relocations and links the game's own system modules into one image (cached in `out/` between starts) |
 | Loader | `src/probe.c` | Loads the image, applies the per-game code patches (render resolution) and starts the game's code |
 | Runtime | `src/runtime_*.c` | The PS4 system functions: memory, threads, files, audio, video, controller, saves and services |
-| GPU | `gpu/shadps4/` | The shadPS4 video core with this port's threaded draw pipeline ([notes](docs/dev/parallel_gpu.md)) |
-| In-game menu | `gpu/shim/vw_overlay.cpp` | The Dear ImGui menu and FPS overlay; settings in `gpu/shim/vw_settings.cpp` |
+| Renderer (experimental) | `src/native_rec.c`, `src/native_vk.c` | Hooks the game's graphics library (Gnmx), records each frame and draws it with Vulkan ([notes](docs/dev/NATIVE_RENDERER.md)) |
+| Shader translator | `src/native_shader.c`, `src/native_shader_spirv.c` | GCN shaders from `eboot.bin` to SPIR-V at the first start (`tools/native/ns_dump.c` from the command line) |
+| Graphics platform | `gpu/platform/` | Window, Vulkan device, presenter (FSR 1, CAS, Anime4K), and the PS4 libraries around drawing: GnmDriver, VideoOut, event queues |
+| In-game menu | `gpu/platform/vw_overlay.cpp` | The Dear ImGui menu and FPS overlay; settings in `gpu/platform/vw_settings.cpp` |
 | Per-game settings | `scripts/game_profiles.py` | Launch defaults and GPU workarounds for each title |
-| Mods and patches | `scripts/mods.py`, `scripts/patches.py` | Loose-file mods and shadPS4 XML patches ([docs](docs/MODS.md)) |
+| Mods and patches | `scripts/mods.py`, `scripts/patches.py` | Loose-file mods and XML code patches ([docs](docs/MODS.md)) |
 | Start program | `launcher/` | One-time setup (check and install the dump), then starts the game |
 | Game hooks | `src/unicorn_*.h` | Render size, button icon layouts |
 
 Developer notes (state, open problems, reverse-engineering findings) are in
 [docs/dev/](docs/dev/): [handoff](docs/dev/unicorn/HANDOFF.md),
 [native settings research](docs/dev/unicorn/NATIVE_SETTINGS.md),
-[GPU pipeline](docs/dev/parallel_gpu.md), [Ghidra tools](tools/re/README.md).
+[renderer](docs/dev/NATIVE_RENDERER.md) and [its tools](tools/native/README.md),
+[Ghidra tools](tools/re/README.md).
 
 ## Contributing
 
@@ -270,8 +300,8 @@ This port stands on the work of others. In order of descent:
 - **cuesta4**: [shadPS4 fork](https://github.com/cuesta4/shadPS4), for its GNM blend rewrite,
   depth/stencil state and image aliasing fixes.
 - **shadPS4 team**: the [shadPS4](https://github.com/shadps4-emu/shadPS4) video core and shader
-  recompiler (vendored in `gpu/shadps4/`, see [gpu/VENDOR.txt](gpu/VENDOR.txt)), and its PS4
-  function names and library layouts.
+  recompiler, which drew the game up to v1.5.2, and its PS4 function names and library layouts,
+  which the port still follows (see [gpu/VENDOR.txt](gpu/VENDOR.txt)).
 - **yogesh1239**: CI builds for Windows and Linux, run logs, contributing docs and templates.
 - **rufaswan**: [Web2D_Games](https://github.com/rufaswan/Web2D_Games), whose notes on
   Vanillaware's sprite files (FMBS) made the Xbox and Nintendo button icons possible.
@@ -284,12 +314,12 @@ Libraries and tools used:
 | [FFmpeg](https://ffmpeg.org) | Movies (H.264/HEVC), MP3/AAC audio, PNG |
 | [SDL3](https://github.com/libsdl-org/SDL) | Window, keyboard and controllers |
 | [Dear ImGui](https://github.com/ocornut/imgui) | In-game menu and overlay |
-| [sirit](https://github.com/shadps4-emu/sirit), [SPIRV-Headers](https://github.com/KhronosGroup/SPIRV-Headers), [glslang](https://github.com/KhronosGroup/glslang) | Shader generation |
-| [Vulkan](https://www.vulkan.org) headers, [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | Graphics API |
+| [glslang](https://github.com/KhronosGroup/glslang) | Compiles the presenter's shaders at build time |
+| [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) | `spirv-val` checks the translated shaders in the tests |
+| [Vulkan](https://www.vulkan.org) headers and loader | Graphics API |
 | AMD FidelityFX FSR 1 and CAS | Upscaling and sharpening |
 | [Anime4K](https://github.com/bloc97/Anime4K) | Line-art restore and upscale (Image tab) |
-| [Zydis](https://github.com/zyantific/zydis), [xbyak](https://github.com/herumi/xbyak) | x86 decoding and code generation |
-| [fmt](https://github.com/fmtlib/fmt), [Boost](https://www.boost.org), [magic_enum](https://github.com/Neargye/magic_enum), [robin-map](https://github.com/Tessil/robin-map), [half](https://half.sourceforge.net), [xxHash](https://github.com/Cyan4973/xxHash), [zlib](https://zlib.net), [miniz](https://github.com/richgel999/miniz) | Support libraries |
+| [zlib](https://zlib.net) | Support library |
 | [DejaVu fonts](https://dejavu-fonts.github.io) | Menu font |
 | [Pillow](https://python-pillow.org), [PyInstaller](https://pyinstaller.org) | Launcher images and packaging |
 
