@@ -51,7 +51,7 @@ GAMES = {
     'unicorn': {
         'title_id': 'CUSA36381', 'app_version': '01.04',
         'version_hint': 'the base game with the 1.04 update applied, or the Hong Kong 1.05 package',
-        'name': 'Unicorn Overlord', 'title': 'Unicorn Overlord', 'run_dir': 'run_uo',
+        'name': 'Unicorn Overlord', 'title': 'Unicorn Overlord shadPS4', 'run_dir': 'run_uo',
         'colors': {'bg': '#0a1222', 'gold': '#c8a254', 'gold_hi': '#f0d48a'},
         # Both have the same eboot.bin; the fan English patch replaces the Chinese text files
         # (docs/KNOWN_ISSUES.md, english_text). text_language: vw.ini.

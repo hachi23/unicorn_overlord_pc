@@ -101,7 +101,7 @@ mods/
 To start one, export the text of your copy of the game:
 
 - Packaged port: run `"Unicorn Overlord.exe" --export-text` (Windows) or
-  `./Unicorn-Overlord-x86_64.AppImage --export-text` (Linux). It writes every sheet to
+  `./Unicorn-Overlord-shadPS4-x86_64.AppImage --export-text` (Linux). It writes every sheet to
   `data/mods/My translation/MsgSheet/`, from the text the game shows now (English with the fan
   patch). `--export-text <folder>` writes somewhere else.
 - From the source: `python3 scripts/fms.py export <game folder> <mod folder>`.

@@ -1,6 +1,6 @@
 # Builds the release packages for every pull request and every merge to main:
-#   Linux:   Unicorn-Overlord-x86_64.AppImage (built on Ubuntu 22.04: runs on glibc 2.35 and newer)
-#   Windows: Unicorn-Overlord-PC-windows.zip (MSYS2 CLANG64; the program, _internal/, licenses)
+#   Linux:   Unicorn-Overlord-shadPS4-x86_64.AppImage (built on Ubuntu 22.04: runs on glibc 2.35 and newer)
+#   Windows: Unicorn-Overlord-shadPS4-PC-windows.zip (MSYS2 CLANG64; the program, _internal/, licenses)
 # On main, the "latest" pre-release is replaced with the new files. A pushed vMAJOR.MINOR.PATCH tag
 # publishes that release (notes: the tag's message); the start program offers it as an update
 # (scripts/updates.py). Every release carries SHA256SUMS, which the updater checks.
@@ -23,7 +23,7 @@ permissions:
 
 env:
   GAME: unicorn
-  TITLE: Unicorn Overlord
+  TITLE: Unicorn Overlord shadPS4
   # Pinned to the versions the port is developed with.
   VULKAN_HEADERS: v1.4.357
   GLSLANG: 16.0.0
@@ -192,7 +192,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag \
+          gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag --latest=false \
             --title "$GITHUB_REF_NAME" release/*
       - name: Replace the "latest" pre-release
         if: github.ref == 'refs/heads/main'

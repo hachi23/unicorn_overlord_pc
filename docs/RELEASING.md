@@ -6,8 +6,8 @@
 
 | Job | Runner | Result |
 |---|---|---|
-| Linux | Ubuntu 22.04, GCC 14 | `Unicorn-Overlord-x86_64.AppImage` (runs on glibc 2.35 and newer: Ubuntu 22.04+, Debian 12+, SteamOS 3.5+) |
-| Windows | MSYS2 CLANG64 | `Unicorn-Overlord-PC-windows.zip` (the start program, `_internal/`, licenses and help) |
+| Linux | Ubuntu 22.04, GCC 14 | `Unicorn-Overlord-shadPS4-x86_64.AppImage` (runs on glibc 2.35 and newer: Ubuntu 22.04+, Debian 12+, SteamOS 3.5+) |
+| Windows | MSYS2 CLANG64 | `Unicorn-Overlord-shadPS4-PC-windows.zip` (the start program, `_internal/`, licenses and help) |
 | Publish | main and `v*` tags | main: replaces the `latest` pre-release; a `vX.Y.Z` tag: publishes that release. Both with `SHA256SUMS` |
 
 Every run keeps both files as workflow artifacts (Actions tab → the run → Artifacts), so a pull

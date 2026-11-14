@@ -5,6 +5,13 @@
 
 A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlord**.
 
+> **shadPS4 edition.** This is branch `shadps4-edition`: v1.5.2 with its shadPS4 graphics,
+> plus the later features of the main build: Exit Game in the game's menus, Quit game, the mouse on
+> the battle map, the Window size setting, the retail v01.04 `eboot.bin` and Switch save import.
+> The main build (v1.6.0 and later) replaces shadPS4 with its own renderer. Use this edition if
+> that renderer gives you trouble. Its releases are tagged `v<version>-shadps4`, and it updates
+> only to those.
+
 | Dump | State |
 |---|---|
 | CUSA36381 (Asia), app 01.04 (base game with the 1.04 update; Japanese, Chinese or, with the fan English patch, English text) | Prologue, chapter 1 and its first battle played; saving and loading work; every system function the game imports is implemented |
@@ -42,9 +49,9 @@ The release includes checksums, source and matching debug symbols.
 
 Test builds of `main` are on the [`latest` pre-release](https://github.com/hachi23/unicorn_overlord_pc/releases/tag/latest):
 
-- **Linux:** `Unicorn-Overlord-x86_64.AppImage`. Make it executable (`chmod +x`) and run it. It
+- **Linux:** `Unicorn-Overlord-shadPS4-x86_64.AppImage`. Make it executable (`chmod +x`) and run it. It
   keeps its `data/` folder next to the `.AppImage`.
-- **Windows:** `Unicorn-Overlord-PC-windows.zip`. Extract it into its own folder and run
+- **Windows:** `Unicorn-Overlord-shadPS4-PC-windows.zip`. Extract it into its own folder and run
   `Unicorn Overlord.exe`; it keeps `data/` beside itself. Keep `LICENSE` and `licenses/` with it.
 
 These are untested builds of the newest code. See [docs/RELEASING.md](docs/RELEASING.md) for how

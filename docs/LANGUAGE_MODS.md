@@ -67,7 +67,7 @@ language files at each start. Turn the mod off and the game is back as it was.
 - Finish the one-time setup and start the game once, so the port has a `data` folder.
 - Find your **data folder**. It is next to the program:
   - Windows: the `data` folder beside `Unicorn Overlord.exe`.
-  - Linux: the `data` folder beside `Unicorn-Overlord-x86_64.AppImage`.
+  - Linux: the `data` folder beside `Unicorn-Overlord-shadPS4-x86_64.AppImage`.
   - From the source tree: the port folder itself, or `VW_DATA_DIR` if you set it.
 
 ## Use a Switch text file
@@ -105,7 +105,7 @@ language files at each start. Turn the mod off and the game is back as it was.
 1. **Export the game's text.** This writes every text sheet as a JSON file into a new mod:
    - Windows: open a command prompt in the port folder and run
      `"Unicorn Overlord.exe" --export-text`
-   - Linux: `./Unicorn-Overlord-x86_64.AppImage --export-text`
+   - Linux: `./Unicorn-Overlord-shadPS4-x86_64.AppImage --export-text`
    - From the source tree: `python3 scripts/fms.py export <game folder> <mod folder>`
 
    The files go to `data/mods/My translation/MsgSheet/`. To write them somewhere else, add a

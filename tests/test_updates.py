@@ -34,6 +34,8 @@ class VersionTest(unittest.TestCase):
         self.assertFalse(updates.is_newer('v0.9.9', 'v1.0.0'))
         self.assertTrue(updates.is_newer('v0.1.0', 'f4cc431'))  # a test build: every release is newer
         self.assertFalse(updates.is_newer('latest', 'v0.1.0'))
+        self.assertTrue(updates.is_newer('v1.6.1-shadps4', 'v1.6.0-shadps4-3-gabcdef0'))
+        self.assertFalse(updates.is_newer('v1.6.0-shadps4', 'v1.6.0-shadps4-3-gabcdef0'))
 
     def test_pick_release(self):
         releases = [release('latest'), release('v0.3.0', draft=True), release('v0.2.0', body='notes'),
