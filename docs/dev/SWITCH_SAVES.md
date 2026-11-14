@@ -1,61 +1,77 @@
-# Switch saves on the PS4 port (issue #71): findings so far
+# Switch saves on the PS4 port (issue #71)
 
-Status (2026-11-09): **not possible yet**. No Switch save file has been seen. The Switch
-version's save is a related but different layout, so a converter has to move whole blocks and
-check every one of them against a real save.
+Status (2026-11-14): **works**. `scripts/switch_save.py` converts a Switch save, and the launcher
+imports a folder of them (`--import-switch-save`, or the folder dropped on the program). Tested
+with a real Switch 1.05 save of 70 hours: the four saves (Auto, 01-03, one of them Clear Data)
+list with the right chapter, level and play time, load, and keep their units, gold, honors,
+renown, world map, towns and stationed guards.
 
-## The PS4 save
+Limits:
 
-`savedata/1/CUSA36381/SAVEDATA0/UCSAVEFILE.DATA`, 5,109,536 bytes (0x4DF720), not encrypted or
-compressed. It holds the game's save struct as it is in memory:
+- A save made during a battle (the autosave usually is) shows "Load failed because the game
+  version has changed. Restarting stage." The battle snapshot is not converted. The game then
+  starts that stage again from its beginning.
+- The test save's final stage ("Unicorn Overlord") hangs when it starts, on the native renderer
+  and on the v1.5.x shadPS4 build alike. Present waits for GPU work that never finishes. It looks
+  like a port problem on that stage, not the conversion: everything else in the same save works.
+  It is not settled until a PS4 save at that stage has been tried.
+- `UCGLOBALDATA.DAT` (settings, Library, the Load list) is not converted. The importer writes
+  only the Load list entries of the slots it fills.
 
-| Offset | Value |
-|---|---|
-| 0x00 | 0 |
-| 0x04 | `UCSD` (0x44534355) |
-| 0x08 | 0x1C50D5 (the same in every save: a layout version) |
-| 0x0C | 0x4DF720 (the size) |
-| 0x10 | two bytes that change between saves (slot? 0x102 / 0x1ff), then the save time (year 0x7ea...) |
+## The files
 
-The PS4 eboot (v01.04 `eboot.elf` from the preparation, 0x250f60) clears 0x4DF720 bytes, writes
-`UCSD` and 0x1C50D5 at offset 4, then sets up the sub-structs at 0x10, 0x425DA0, 0x4D35F8,
-0x4D3E38, 0x4D4238 and 0x4D5360.
+Both are the game's save struct as it is in memory: no compression, no wrapper.
 
-## The Switch save struct (1.05 update executable)
+| | PS4 | Switch |
+|---|---|---|
+| File | `savedata/1/CUSA36381/SAVEDATA<n>/UCSAVEFILE.DATA` | `UCSAVEFILE00_AUTOSAVE.DAT`, `UCSAVEFILE01.DAT` ... |
+| Size | 0x4DF720 | 0x4E2410 |
+| Header | 0, `UCSD`, 0x1C50D5, size | the same, with the Switch size |
+| Global | `GLOBALDATA/UCGLOBALDATA.DAT`, 1,671,256 bytes | `UCGLOBALDATA.DAT`, 200,888 bytes |
 
-`tools/re/nso_extract.py exefs_upd/main <folder>` gives the code (`text.bin`, address 0). The
-same function is at 0x2c8854: it clears **0x4E2410** bytes (11,504 more), writes the same `UCSD`
-and the same version 0x1C50D5, then sets up its sub-structs at 0x10, **0x427E90**, **0x4D56E8**,
-0x4D7E28, 0x4D8648 and 0x4DA398.
+The version 0x1C50D5 is the same on both although the layout is not, so the game would read a
+Switch file without complaint and get the wrong data: never load one unconverted.
 
-- From the second sub-struct on, everything is 0x20F0 bytes later than on the PS4: the first
-  sub-struct (PS4 0x10-0x425DA0) is 0x20F0 larger on the Switch. Where inside it is not known.
-- The remaining 0xC00 of the size difference is further on (not located).
-- The version number is the same although the layout is not, so the game itself would accept a
-  wrongly placed save: a converter must not rely on the header.
-- How the Switch writes the file (the struct as it is, compressed, or with a Nintendo save
-  header) is not known.
+The Load list comes from the global file: 100 records of 0x48 bytes at 0x1818, one per slot. A
+used record is the first 0x48 bytes of that slot's save. Slot 0 is Auto.
 
-## Narrowed down (2026-11-09, later)
+## The layout
 
-- The Switch save editor [turtle-insect/unicornoverlord](https://github.com/turtle-insect/unicornoverlord)
-  reads the Switch file as one raw buffer: no compression and no wrapper. Its offsets read
-  correctly on a PS4 save: money 0x20, fame 0x24, items 0xA0 (20 bytes each), characters
-  0x2AF40 (464 bytes each; all 14 of a PS4 save line up, with the count at 0x63984), units
-  0x10D89A (1720 each), bonds 0x1B5830 (1316 each).
-- The first block's init (PS4 0x51f590, Switch 0x2d5b84; offsets from save+0x10) places the
-  same sub-structs at the same offsets up to **0x1FB870**: 0x90, 0x13910, 0x139BC, 0x2AF30,
-  0x6397C, 0x9C3C8, 0xD4E14, 0x10D860, 0x137850, 0x161840, 0x18B830, 0x1B5820, 0x1EA330,
-  0x1FB870. The next one is 0x3EA080 on the PS4 and 0x3EC170 on the Switch: **the sub-struct at
-  save+0x1FB880 is 0x20F0 bytes larger on the Switch** (init PS4 0x511610, inlined; Switch
-  0x2c3be0). Everything before it can be copied as it is.
-- Still to find: where inside that sub-struct the 0x20F0 bytes are, and the other 0xC00.
+Found by comparing the save init functions of the two executables (PS4 v01.04 `eboot.elf` from
+the preparation at 0x24cf59; Switch 1.05 update `main` at 0x2c8854, extracted with
+`tools/re/nso_extract.py`). Each places its sub-structs and clears them, so the offsets of the
+sub-inits line up block by block. The Switch build is AArch64 and pads some fields to 8 bytes.
 
-## Next steps
+| PS4 offset | Switch offset | Size (PS4) | Content |
+|---|---|---|---|
+| 0x0 | 0x0 | 0x20AEA1 | Header, money, items, characters, units, bonds... the same |
+| 0x20AEA4 | 0x20AEA8 | 350 x 0xD8 | Town records: 0xF0 each on the Switch |
+| 0x21D5F4 | 0x21F6C8 | 0x419 | The same |
+| 0x21DA10 | 0x21FAF0 | 0xCFE00 | The same (shift 0x20E0) |
+| 0x2ED810 | 0x2EF8F0 | 0x1280 | Zero in every save seen; not copied (a 0x10 shift inside is not located) |
+| 0x2EEA90 | 0x2F0B80 | to 0x4D35F8 | The same (shift 0x20F0), including block B (0x425DA0, 0xAD858 bytes) |
+| 0x4D35F8 | 0x4D56E8 | 0x40 | Flags of a 512-entry table |
+| 0x4D3638 | 0x4D5728 | 512 x 4 | Table entries: u64 on the Switch, only the low 20 bits used |
+| 0x4D3E38 | 0x4D6728 | 0x1700 | The same |
+| 0x4D5538 | 0x4D7E28 | 0x20 | Flags of a 256-entry table |
+| 0x4D5558 | 0x4D7E48 | 256 x 4 | Table entries: u64 on the Switch, only the low 8 bits used |
+| 0x4D5958 | 0x4D8648 | to the end | The same (shift 0x2CF0) |
 
-1. Get a Switch save (`UCSAVEFILE.DATA` or what the Switch has; the issue's reporter offered
-   200 hours of play). The owner asked for it on #71.
-2. Compare the two init functions' sub-calls (PS4 0x51f590 vs Switch 0x2d5b84 for the first
-   sub-struct) to find where the 0x20F0 bytes go, then the same for the 0xC00.
-3. Write the converter as a script that moves each block to its PS4 offset, and check it by
-   loading the converted save at several points of the story.
+A town record (init Switch 0x2bcdd0) is a 0x40-byte name (`Town_C18_1`...) and two state
+objects:
+
+| | PS4 | Switch |
+|---|---|---|
+| Record | 0xD8; objects at +0x40 and +0x8C | 0xF0; objects at +0x40 and +0x98 |
+| Object | 0x4C: 0x40 bytes, u8 at +0x40, u32 at +0x44, u8 at +0x48 | 0x58: 0x40 bytes, u8 at +0x40, 16 bits at +0x48, u8 at +0x50 |
+
+The Switch init clears only the low 16 bits of the value at +0x48; the rest of each object is
+padding. The test save has 337 records in use on both, in the same order, and the last byte
+holds 1 or 2 in some of them.
+
+## Checking a change
+
+`python3 -m unittest tests.test_switch_save` checks the moves on a synthetic save. With a real
+one, import it into a test user folder (`python3 scripts/switch_save.py <folder> run_uo/user`)
+and load each slot: the Load list, Unit Formation, the Overworld menu's gold and renown, the
+world map, and a town's Station a Guard list exercise most blocks.
