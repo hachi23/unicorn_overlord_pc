@@ -5,6 +5,11 @@
 
 A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlord**.
 
+> **No longer developed.** v1.6.0 is the last release. If its experimental renderer gives you
+> trouble, use the shadPS4 edition in the same release (`Unicorn-Overlord-shadPS4-...`) or any
+> older build from the [releases page](https://github.com/hachi23/unicorn_overlord_pc/releases).
+> The source is GPL-2.0-or-later: you are welcome to fork it and change it however you like.
+
 | Dump | State |
 |---|---|
 | CUSA36381 (Asia), app 01.04 (base game with the 1.04 update; Japanese, Chinese or, with the fan English patch, English text), or the Hong Kong 1.05 package | Prologue, chapter 1 and its first battle played; saving and loading work; every system function the game imports is implemented |
