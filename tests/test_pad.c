@@ -6,7 +6,6 @@
 static int capture, dead_zone=15;
 int vwgpu_stick_dead_zone(void) { return dead_zone; }
 int vwgpu_overlay_captures_input(void) { return capture; }
-void vwgpu_mouse_map_active(void) {}
 int vwgpu_setting_text(const char *key, char *out, uint64_t size) { (void)key; (void)out; (void)size; return 0; }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
@@ -102,7 +101,21 @@ int main(void) {
     if (gamepad) SDL_CloseGamepad(gamepad);
     gamepad=NULL;
     assert(SDL_DetachVirtualJoystick(id));
+    /* Scripted mouse motion arrives once, in window points, with the scripted window's size; a
+     * nudge tilts the left stick toward the motion for two reads, then lets go. */
+    float dx, dy;
+    int window_w, window_h;
+    inject(path,"mouse=12,-3");
+    runtime_mouse_take(&dx,&dy,&window_w,&window_h);
+    assert(dx==12.0f && dy==-3.0f && window_w==1381 && window_h==776);
+    runtime_mouse_take(&dx,&dy,&window_w,&window_h);
+    assert(dx==0.0f && dy==0.0f);
+    inject(path,"");
+    runtime_mouse_nudge(1.0f,0.0f);
+    assert(pad_read_state(1,&data)==0 && data.left_x==188 && data.left_y==128);
+    assert(pad_read_state(1,&data)==0 && data.left_x==188);
+    assert(pad_read_state(1,&data)==0 && data.left_x==128);
     SDL_Quit();
     unlink(path);
-    puts("PASS: pad ABI, debug camera chord, left/right clicks, SDL touch coordinates, overlay capture");
+    puts("PASS: pad ABI, debug camera chord, left/right clicks, SDL touch coordinates, overlay capture, scripted mouse, stick nudge");
 }
