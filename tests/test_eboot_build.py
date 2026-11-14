@@ -42,8 +42,9 @@ class EbootBuild(unittest.TestCase):
 
 
 class KnownBuilds(unittest.TestCase):
-    def test_the_hashes_are_v0104_and_hong_kong_105(self):
-        self.assertEqual([h[:8] for h in patches.SUPPORTED_EBOOTS['CUSA36381']], ['de8e4970', 'fff894f5'])
+    def test_the_hashes_are_v0104_hong_kong_105_and_retail_v0104(self):
+        self.assertEqual([h[:8] for h in patches.SUPPORTED_EBOOTS['CUSA36381']],
+                         ['de8e4970', 'fff894f5', '67c1d561'])
 
 
 class SetupRefusesAnotherBuild(unittest.TestCase):

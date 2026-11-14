@@ -16,7 +16,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
-#include <mutex>
 #include <thread>
 #include <vector>
 #include <SDL3/SDL.h>
@@ -110,14 +109,6 @@ DisplayFormat FormatOf(u32 pixel_format) {
     }
 }
 
-// Frame interpolation (VW_INTERP=1): the game's flips, counted for the statistics, and the
-// format of the buffer it flipped last, for the present thread.
-std::atomic<u32> game_flips{0};
-// The flip thread presents when interpolation is off, the present thread when it is on; at a
-// switch both may for a frame.
-std::mutex present_mutex;
-std::atomic<DisplayFormat> last_format{DisplayFormat::Srgb};
-
 // ---- Frame statistics (VW_FRAME_STATS=1): flip rate and the worst interval every 5 s ----
 void NoteFlip() {
     static const bool enabled = std::getenv("VW_FRAME_STATS") != nullptr;
@@ -132,12 +123,8 @@ void NoteFlip() {
     const double seconds = std::chrono::duration<double>(now - window).count();
     if (seconds >= 5.0) {
         static const u32 hz = Number("VW_VBLANK_HZ", 60);
-        if (native_interp_active())
-            std::printf("Frame stats: %.1f FPS (game %.1f), worst frame %.1f ms (vblank %u Hz, interpolated)\n",
-                        frames / seconds, game_flips.exchange(0) / seconds, worst, hz ? hz : 480);
-        else
-            std::printf("Frame stats: %.1f FPS, worst frame %.1f ms (vblank %u Hz)\n", frames / seconds, worst,
-                        hz ? hz : 480), game_flips = 0;
+        std::printf("Frame stats: %.1f FPS, worst frame %.1f ms (vblank %u Hz)\n", frames / seconds, worst,
+                    hz ? hz : 480);
         std::fflush(stdout);
         window = now;
         frames = 0;
@@ -157,17 +144,10 @@ void Flip(const Request& r) {
             const s32 group = port.buffers[r.index].group;
             if (group >= 0) format = FormatOf(port.groups[group].pixel_format);
         }
-        if (!native_interp_active() && !native_present_image(address, &image, &width, &height)) image = nullptr;
+        if (!native_present_image(address, &image, &width, &height)) image = nullptr;
     }
-    if (native_interp_active()) {
-        // The present thread shows the game's frames.
-        last_format.store(format);
-        ++game_flips;
-    } else {
-        std::scoped_lock lock{present_mutex};
-        Present(static_cast<VkImage>(image), width, height, format);
-        NoteFlip();
-    }
+    Present(static_cast<VkImage>(image), width, height, format);
+    NoteFlip();
     std::vector<s64> queues;
     {
         std::scoped_lock lock{port.mutex};
@@ -183,23 +163,6 @@ void Flip(const Request& r) {
         port.shown = r.index;
     }
     Equeue::Trigger(FlipEventId, Equeue::VideoOut, FlipEventId | u64(r.arg) << 16);
-}
-
-// Frame interpolation: shows a blended frame per display refresh (Present waits for it with
-// VSync), the last frame again for the menu when the game shows none.
-void PresentThread() {
-    for (;;) {
-        void* image = nullptr;
-        u32 width = 0, height = 0;
-        if (native_interp_next(&image, &width, &height, 100)) {
-            std::scoped_lock lock{present_mutex};
-            Present(static_cast<VkImage>(image), width, height, last_format.load());
-            NoteFlip();
-        } else if (native_interp_active() && VwOverlay::Visible()) {
-            std::scoped_lock lock{present_mutex};
-            PresentAgain();
-        }
-    }
 }
 
 void FlipThread() {
@@ -242,10 +205,8 @@ void FlipThread() {
             if (frame_limit) next_flip = std::max(next_flip + frame_period, now - frame_period);
             Flip(r);
             last_present = std::chrono::steady_clock::now();
-        } else if (now - last_present > std::chrono::milliseconds(100) && VwOverlay::Visible() &&
-                   !native_interp_active()) {
+        } else if (now - last_present > std::chrono::milliseconds(100) && VwOverlay::Visible()) {
             // No game frames (loading, a dialog waiting): the menu still updates.
-            std::scoped_lock lock{present_mutex};
             PresentAgain();
             last_present = std::chrono::steady_clock::now();
         }
@@ -292,10 +253,7 @@ s32 PS4_ABI sceVideoOutOpen(s32 /*user*/, s32 bus, s32 index, const void*) {
     if (port.open) return ErrorBusy;
     port.open = true;
     static std::once_flag started;
-    std::call_once(started, [] {
-        std::thread(FlipThread).detach();
-        std::thread(PresentThread).detach(); // idle while interpolation is off
-    });
+    std::call_once(started, [] { std::thread(FlipThread).detach(); });
     return 1;
 }
 s32 PS4_ABI sceVideoOutClose(s32 handle) {

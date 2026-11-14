@@ -99,10 +99,14 @@ def eboot_matches(game, profile):
 
 # sha256 of the eboot.bin builds the port's code hooks (render resolution, aspect ratio, button
 # icons, the Options rows) know (src/unicorn_build.h): v01.04 (the 1.04 update, also under the fan
-# English patch) and the Hong Kong base game 01.00 master 1.05 (#33). Any other build is refused
-# (issue #14).
+# English patch), the Hong Kong base game 01.00 master 1.05 (#33), and v01.04 as the retail update
+# ships it (#95). The first v01.04 file is a backport: 196 PSN web API import stubs (NpCppWebApi,
+# NpWebApi2, Http2), sceGnmGetGpuCoreClockFrequency and one sceSysmoduleLoadModule call return 0
+# without calling. The game code is the same byte for byte, so both use the v01.04 addresses.
+# Any other build is refused (issue #14).
 SUPPORTED_EBOOTS={'CUSA36381':('de8e4970ae6ab39278bd61cd7818d7844adf934e1909e1356476a28d239414c4',
-                               'fff894f5f889c19ba09b4af1cd7b8b403649a85540ff45137728218edc7c8eaf')}
+                               'fff894f5f889c19ba09b4af1cd7b8b403649a85540ff45137728218edc7c8eaf',
+                               '67c1d56190a242720fa73d5061f5c9f49bfea1763091305da1049c95f207db5e')}
 
 
 def eboot_supported(game):
