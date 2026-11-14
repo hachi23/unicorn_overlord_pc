@@ -131,10 +131,11 @@ _Static_assert(sizeof(Record) == 544, "Record must match the layout src/native_s
 typedef struct { VkDeviceAddress records; } Push;
 typedef struct { uint64_t address; uint32_t width, height, swap, tiling; Image image; } Target;
 /* source: the descriptor it was made from; span: the bytes of game memory it reads; hash: of
- * that memory when last uploaded (the game reuses memory for new content, see textures_check). */
+ * that memory when last uploaded (the game reuses memory for new content, see textures_check);
+ * used: the last frame that drew with it or uploaded into it (see texture_slot). */
 typedef struct {
     uint64_t address; uint32_t width, height, format, number, tiling; uint8_t swizzle[4]; Image image;
-    GnmTexture source; size_t span; uint64_t hash;
+    GnmTexture source; size_t span; uint64_t hash, used;
 } Texture;
 typedef struct { uint32_t vs, ps, blend, mask, topology; VkPipeline pipeline; } Pipeline;
 
@@ -214,6 +215,8 @@ static void pipeline_key_seen(PipelineKey key);
 static VkDescriptorPool bindless_pool;
 static VkDescriptorSet bindless_set;
 static uint32_t image_count;
+/* Bindless indices of destroyed images, given to the next images made. */
+static uint32_t free_indices[MAX_IMAGES], free_index_count;
 /* A frame being recorded or in flight: the GPU may still read its rings and staging buffers
  * until its fence signals. */
 typedef struct {
@@ -243,7 +246,7 @@ static uint32_t target_count, texture_count, pipeline_count, sampler_count;
 #define staging (frame->staging)
 static Image dummy_texture;
 static VkSampler dummy_sampler;     /* sampler index 0 */
-static uint64_t frame_number, skipped_draws, drawn_draws, replay_ns, wait_ns, texture_reloads;
+static uint64_t frame_number, skipped_draws, drawn_draws, replay_ns, wait_ns, texture_reloads, texture_evictions;
 /* Set when this frame logged something new: the frame is then dumped as text (up to 32 times). */
 static int report, reports;
 static uint64_t clock_ns(void) {
@@ -298,8 +301,9 @@ static Image image_create(uint32_t width, uint32_t height, VkFormat format, VkIm
     CHECK(vkCreateImageView(device, &view, NULL, &image.view));
     image.index = 0;
     if (usage & VK_IMAGE_USAGE_SAMPLED_BIT) {
-        if (image_count == MAX_IMAGES) { fprintf(stderr, "Native: more than %d images\n", MAX_IMAGES); abort(); }
-        image.index = image_count++;
+        if (free_index_count) image.index = free_indices[--free_index_count];
+        else if (image_count == MAX_IMAGES) { fprintf(stderr, "Native: more than %d images\n", MAX_IMAGES); abort(); }
+        else image.index = image_count++;
         const VkDescriptorImageInfo info = {.imageView = image.view, .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
         const VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = bindless_set,
             .dstBinding = 0, .dstArrayElement = image.index, .descriptorCount = 1,
@@ -307,6 +311,14 @@ static Image image_create(uint32_t width, uint32_t height, VkFormat format, VkIm
         vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
     }
     return image;
+}
+/* The caller makes sure no submitted or recorded commands use the image any more. */
+static void image_destroy(Image *image) {
+    vkDestroyImageView(device, image->view, NULL);
+    vkDestroyImage(device, image->image, NULL);
+    vkFreeMemory(device, image->memory, NULL);
+    free_indices[free_index_count++] = image->index;
+    *image = (Image){0};
 }
 static void sampler_register(VkSampler sampler, uint32_t index) {
     const VkDescriptorImageInfo info = {.sampler = sampler};
@@ -384,8 +396,9 @@ static void to_general(VkImage image, VkImageLayout from) {
 /* ---- Address maps: game address -> index + 1 (0: empty), open addressing ---- */
 enum { MAP_SIZE = 8192 };
 typedef struct { uint64_t key[MAP_SIZE]; uint32_t value[MAP_SIZE]; } Map;
+static uint32_t map_home(uint64_t key) { return (uint32_t)((key * 0x9e3779b97f4a7c15ull) >> 51) & (MAP_SIZE - 1); }
 static uint32_t map_slot(const Map *m, uint64_t key) {
-    uint32_t h = (uint32_t)((key * 0x9e3779b97f4a7c15ull) >> 51) & (MAP_SIZE - 1);
+    uint32_t h = map_home(key);
     while (m->value[h] && m->key[h] != key) h = (h + 1) & (MAP_SIZE - 1);
     return h;
 }
@@ -394,6 +407,21 @@ static void map_set(Map *m, uint64_t key, uint32_t value) {
     const uint32_t h = map_slot(m, key);
     m->key[h] = key;
     m->value[h] = value;
+}
+/* Removes the key; later keys of its probe run move back so lookups still find them. */
+static void map_remove(Map *m, uint64_t key) {
+    uint32_t hole = map_slot(m, key);
+    if (!m->value[hole]) return;
+    m->value[hole] = 0;
+    for (uint32_t j = (hole + 1) & (MAP_SIZE - 1); m->value[j]; j = (j + 1) & (MAP_SIZE - 1)) {
+        const uint32_t home = map_home(m->key[j]);
+        /* The entry stays when its home lies cyclically in (hole, j]. */
+        if (hole <= j ? (hole < home && home <= j) : (hole < home || home <= j)) continue;
+        m->key[hole] = m->key[j];
+        m->value[hole] = m->value[j];
+        m->value[j] = 0;
+        hole = j;
+    }
 }
 static Map target_map, texture_map, pipeline_map, program_map;
 
@@ -607,6 +635,7 @@ static void texture_fill(Texture *x) {
     slow_upload_bytes += size;
     const uint8_t *source = (const uint8_t *)(uintptr_t)t->address;
     x->hash = memory_sample_hash(source, x->span);
+    x->used = frame_number;
     uint8_t *mapped;
     VkBuffer from;
     VkDeviceSize offset = 0;
@@ -659,6 +688,22 @@ static void textures_check(void) {
         ++texture_reloads;
     }
 }
+/* A slot for a new texture. The game frees assets and loads others (each battle, each stage),
+ * and describes reused memory with new sizes and formats, so textures stop being drawn. When
+ * all slots are taken, the least recently used texture that no frame in flight reads (last
+ * used before the previous frame; render_frame waited for the fence of the one before it)
+ * is destroyed and its slot and bindless index reused. NULL: every texture is still in use. */
+static Texture *texture_slot(void) {
+    if (texture_count < MAX_TEXTURES) return &textures[texture_count++];
+    Texture *oldest = NULL;
+    for (uint32_t i = 0; i < MAX_TEXTURES; ++i)
+        if (textures[i].used + FRAMES <= frame_number && (!oldest || textures[i].used < oldest->used)) oldest = &textures[i];
+    if (!oldest) return NULL;
+    if (map_get(&texture_map, oldest->address) == (uint32_t)(oldest - textures) + 1) map_remove(&texture_map, oldest->address);
+    image_destroy(&oldest->image);
+    ++texture_evictions;
+    return oldest;
+}
 static uint32_t texture_index(const uint8_t raw[32]) {
     GnmTexture t;
     gnm_texture(raw, &t);
@@ -666,23 +711,25 @@ static uint32_t texture_index(const uint8_t raw[32]) {
     if (target) return target->image.index;
     const uint32_t found = map_get(&texture_map, t.address);
     if (found) {
-        const Texture *x = &textures[found - 1];
+        Texture *x = &textures[found - 1];
         if (x->width == t.width && x->height == t.height && x->format == t.format && x->number == t.number &&
-            x->tiling == t.tiling && !memcmp(x->swizzle, t.swizzle, 4))
+            x->tiling == t.tiling && !memcmp(x->swizzle, t.swizzle, 4)) {
+            x->used = frame_number;
             return x->image.index;
+        }
     }
     VkFormat format;
     int block;
     const uint32_t bytes = texture_format(t.format, t.number, &format, &block);
     static int warned;
-    if (!bytes || (t.tiling != 13 && t.tiling != 8) || texture_count == MAX_TEXTURES || staging_count == MAX_STAGING) {
+    Texture *x = NULL;
+    if (!bytes || (t.tiling != 13 && t.tiling != 8) || staging_count == MAX_STAGING || !(x = texture_slot())) {
         if (warned++ < 8)
-            printf("Native: texture %" PRIx64 " %ux%u format %u/%u tiling %u not handled yet\n", t.address, t.width,
-                   t.height, t.format, t.number, t.tiling);
+            printf("Native: texture %" PRIx64 " %ux%u format %u/%u tiling %u not handled yet%s\n", t.address, t.width,
+                   t.height, t.format, t.number, t.tiling, bytes && !x ? " (all textures in use)" : "");
         return dummy_texture.index;
     }
-    Texture *x = &textures[texture_count++];
-    map_set(&texture_map, t.address, texture_count);
+    map_set(&texture_map, t.address, (uint32_t)(x - textures) + 1);
     x->address = t.address; x->width = t.width; x->height = t.height; x->format = t.format; x->number = t.number;
     x->tiling = t.tiling;
     memcpy(x->swizzle, t.swizzle, 4);
@@ -1484,9 +1531,9 @@ static void render_frame(NativeList *lists) {
         printf("Native: renderer drew %.0f and skipped %.0f draws per frame (", drawn_draws / 600.0, skipped_draws / 600.0);
         for (int i = 0; i < SKIP_COUNT; ++i)
             if (skips[i]) printf("%s %.1f, ", skip_names[i], skips[i] / 600.0);
-        printf("); %u targets, %u textures (%" PRIu64 " reloaded), %u pipelines; replay %.3f ms, GPU wait %.3f ms per frame\n",
-               target_count, texture_count, texture_reloads, pipeline_count, replay_ns / 600e6, wait_ns / 600e6);
-        replay_ns = wait_ns = texture_reloads = 0;
+        printf("); %u targets, %u textures (%" PRIu64 " reloaded, %" PRIu64 " replaced), %u pipelines; replay %.3f ms, GPU wait %.3f ms per frame\n",
+               target_count, texture_count, texture_reloads, texture_evictions, pipeline_count, replay_ns / 600e6, wait_ns / 600e6);
+        replay_ns = wait_ns = texture_reloads = texture_evictions = 0;
         /* VW_NATIVE_PEEK=<hex address>: how much of the 256 KiB there is non-zero (debugging aid). */
         const char *peek = getenv("VW_NATIVE_PEEK");
         if (peek) {
