@@ -68,3 +68,25 @@ Limits: at most 11 rows (ids 21–31 fit the 32-bit masks, and none of them matc
 `(id & 0x1b) == 1` test for Difficulty and Voice Language). Render Resolution applies at the next
 start. Not checked yet: Windows, the world map's menu, a Japanese system language (the texts are
 English).
+
+## Exit Game (src/unicorn_exit_game.h)
+
+Added the same way: every instruction it changes is checked first (v01.04 and the Hong Kong 1.05
+build through `unicorn_address`); on anything else it changes nothing and logs that the Insert
+menu's Quit game still works.
+
+- **Title menu.** The title's build (`0xa455b0`) is wrapped. After the game's buttons it adds one
+  of its own, made with the game's allocator and button code (`0x9ed290`), with the label
+  "Exit Game" set as a string (`0x2c590`). The button is made once per title object and freed
+  with it (`0xa432f0`). The title's "which button was pressed" compare (`0xa4265d`) gets a stub:
+  the port's button plays the confirm sound and calls `vwgpu_quit` (saves vw.ini, closes).
+- **System submenus** (world map `0x7827d0`, list at +0x598; battle map `0x7de9e0`, list at
+  +0x4d8). The builder is wrapped to append one entry after Load. The entry uses Return to
+  Title's action (0xe) and carries a marker at entry +0x3604. Four stubs per menu:
+  - the choice: remember that the marked entry was chosen;
+  - the help line: "Close the game and return to the desktop.";
+  - the Yes/No question: "Exit the game? Any unsaved progress will be lost.";
+  - Yes: `vwgpu_quit` instead of the go-to-title flag (`0x21d7500`).
+- Tests: `tests/test_exit_game.c`. Checked in the game: title (v01.04 and HK 1.05), the battle
+  map and the world map (issue #34's save): help line, No returns to the menu, Yes fades out and
+  closes, and Return to Title still asks its own question.

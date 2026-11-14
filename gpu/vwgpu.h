@@ -59,6 +59,9 @@ int vwgpu_setting_rows(const VwgpuSettingRow **rows);
 float vwgpu_setting_value(int row);
 /* Applies a row's value at once and writes vw.ini. */
 void vwgpu_setting_set(int row, float value);
+/* Saves vw.ini and closes the window, as closing it does (the game's Exit Game, the Insert
+ * menu's Quit game). Any thread. */
+void vwgpu_quit(void);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned vwgpu_symbol_count(void);
 #ifdef __cplusplus

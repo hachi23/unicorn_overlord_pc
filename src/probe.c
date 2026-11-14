@@ -12,6 +12,7 @@
 #include "unicorn_ultrawide.h"
 #include "unicorn_button_icons.h"
 #include "unicorn_native_settings.h"
+#include "unicorn_exit_game.h"
 #include "re_watch.h"
 #include "unicorn_mouse.h"
 #include "gpu/vwgpu.h"
@@ -687,6 +688,13 @@ static void install_unicorn_native_settings(const char *app0) {
     }
     protect(code, page_size, 5);
     printf("Options: %u PC rows added to System > Options\n", native_settings.count);
+    unsigned char *exit_code = allocate(page_size);
+    if (!exit_game_install(image, exit_code)) {
+        printf("Exit Game: the game differs from v01.04 here; quit from the Insert menu\n");
+        return;
+    }
+    protect(exit_code, page_size, 5);
+    printf("Exit Game: added to the title menu and the System menus\n");
 }
 
 /* Unicorn Overlord: the text language (text_language= in vw.ini, VW_TEXT_LANGUAGE; the menu's
