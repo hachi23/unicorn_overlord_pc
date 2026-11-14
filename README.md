@@ -14,8 +14,8 @@ A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlo
 |---|---|
 | CUSA36381 (Asia), app 01.04 (base game with the 1.04 update; Japanese, Chinese or, with the fan English patch, English text), or the Hong Kong 1.05 package | Prologue, chapter 1 and its first battle played; saving and loading work; every system function the game imports is implemented |
 
-> **Work in progress.** The game has not been played to the end, and it runs at about 50-60 FPS
-> on a mid-range laptop. Read [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) before reporting a bug.
+> **Not finished.** The game has not been played to the end on the port. It holds 60 FPS on an
+> RX 560X with the native renderer. See [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
 
 ### What it is
 
@@ -44,26 +44,38 @@ Only the dump listed above is supported.
 
 ## Download
 
-Download [the newest release for Windows and Linux](https://github.com/hachi23/unicorn_overlord_pc/releases/latest).
-The release includes checksums, source and matching debug symbols.
+Download [v1.6.0, the last release](https://github.com/hachi23/unicorn_overlord_pc/releases/latest).
+It has two builds of the same port, with the same features. Only the graphics differ:
 
-Test builds of `main` are on the [`latest` pre-release](https://github.com/hachi23/unicorn_overlord_pc/releases/tag/latest):
+| Build | Graphics | Linux | Windows |
+|---|---|---|---|
+| Main | The port's own renderer ([experimental](#renderer-experimental)) | `Unicorn-Overlord-x86_64.AppImage` | `Unicorn-Overlord-PC-windows.zip` |
+| shadPS4 edition | shadPS4, as up to v1.5.2 | `Unicorn-Overlord-shadPS4-x86_64.AppImage` | `Unicorn-Overlord-shadPS4-PC-windows.zip` |
 
-- **Linux:** `Unicorn-Overlord-x86_64.AppImage`. Make it executable (`chmod +x`) and run it. It
-  keeps its `data/` folder next to the `.AppImage`.
-- **Windows:** `Unicorn-Overlord-PC-windows.zip`. Extract it into its own folder and run
-  `Unicorn Overlord.exe`; it keeps `data/` beside itself. Keep `LICENSE` and `licenses/` with it.
+Start with the main build. If its renderer gives you trouble, use the shadPS4 edition. Its
+source is the [`shadps4-edition`](https://github.com/hachi23/unicorn_overlord_pc/tree/shadps4-edition)
+branch.
 
-These are untested builds of the newest code. See [docs/RELEASING.md](docs/RELEASING.md) for how
-builds and releases are made.
+- **Linux:** make the `.AppImage` executable (`chmod +x`) and run it. It keeps its `data/`
+  folder next to the `.AppImage`.
+- **Windows:** extract the zip into its own folder and run the `.exe` in it. It keeps `data/`
+  beside itself. Keep `LICENSE` and `licenses/` with it.
+
+Each build updates only to its own kind. The two can sit side by side in separate folders. The
+release also has checksums, the source and matching debug symbols. See
+[docs/RELEASING.md](docs/RELEASING.md) for how builds and releases are made.
 
 ## Requirements
 
 - 64-bit Linux, or Windows 10 (1903+) / 11.
-- A Vulkan 1.3 GPU with buffer device addresses, descriptor indexing, 64-bit shader integers,
-  subgroup ballot/vote and push descriptors (AMD, NVIDIA and Intel GPUs of the last years with a
-  current driver). If one is missing the game stops at start and the log names it
-  (`Native: <GPU> has no ...`). Sparse buffers are no longer needed (v1.6.0).
+- A Vulkan 1.3 GPU.
+  - **Main build:** it needs buffer device addresses, descriptor indexing, 64-bit shader
+    integers, subgroup ballot/vote and push descriptors (AMD, NVIDIA and Intel GPUs of the last
+    years with a current driver). If one is missing, the game stops at start and the log names
+    it (`Native: <GPU> has no ...`).
+  - **shadPS4 edition:** it needs sparse buffers (`sparseBinding`, `sparseResidencyBuffer`). AMD
+    and NVIDIA have them. On Linux, Intel integrated graphics older than Gen12 (UHD 620 and
+    similar) lack them.
 - Your own dump of the game with the 1.04 update merged in (or the Hong Kong 1.05 package), as a folder containing `eboot.bin`,
   `sce_module`, `sce_sys` and the `.CPK` files (about 7 GB).
 
@@ -154,8 +166,8 @@ template and attach:
 
 ### Renderer (experimental)
 
-Since v1.6.0 the port draws with its own renderer, and the shadPS4 GPU emulation it used before is
-gone. The game's calls into its graphics library are recorded and drawn directly with Vulkan;
+Since v1.6.0 the main build draws with its own renderer instead of the shadPS4 GPU emulation it
+used before. The shadPS4 edition keeps shadPS4. The game's calls into its graphics library are recorded and drawn directly with Vulkan;
 the PS4 command buffers are no longer decoded. It is faster, most of all on weak GPUs: on an
 RX 560X the New Game opening holds 60 FPS where v1.5.2 dropped to 36-54, and on a Vega 8
 integrated GPU it runs 46-60 FPS where v1.5.2 ran 38-59.
@@ -170,9 +182,10 @@ patches. The menu shows **Renderer: Native (experimental)** under About.
 chapter 1 (story scenes, the battle map, menus, saving and loading, the English patch, French
 from the Switch text, 21:9 and 32:9, the Hong Kong 1.05 package) on AMD GPUs on Linux. Windows,
 NVIDIA and Intel GPUs, the Steam Deck and later chapters have not been checked by the developer.
-If something is missing or looks wrong, open an issue with the diagnostics ZIP and a screenshot;
-a screenshot of the same place with **v1.5.2** (the last release with the old renderer, still on
-the releases page) helps most. The log lines that start with `Native:` are the useful ones.
+The port is no longer developed. If something is missing or looks wrong, use the
+[shadPS4 edition](#download) or an older release instead. For anyone forking the port: the log lines
+that start with `Native:` and [docs/dev/NATIVE_RENDERER.md](docs/dev/NATIVE_RENDERER.md) are the
+place to start.
 
 ### Other languages (experimental)
 
@@ -315,7 +328,7 @@ This port stands on the work of others. In order of descent:
 - **cuesta4**: [shadPS4 fork](https://github.com/cuesta4/shadPS4), for its GNM blend rewrite,
   depth/stencil state and image aliasing fixes.
 - **shadPS4 team**: the [shadPS4](https://github.com/shadps4-emu/shadPS4) video core and shader
-  recompiler, which drew the game up to v1.5.2, and its PS4 function names and library layouts,
+  recompiler, which drew the game up to v1.5.2 and still does in the shadPS4 edition, and its PS4 function names and library layouts,
   which the port still follows (see [gpu/VENDOR.txt](gpu/VENDOR.txt)).
 - **yogesh1239**: CI builds for Windows and Linux, run logs, contributing docs and templates.
 - **rufaswan**: [Web2D_Games](https://github.com/rufaswan/Web2D_Games), whose notes on
