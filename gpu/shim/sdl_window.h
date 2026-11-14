@@ -42,6 +42,7 @@ private:
     std::mutex text_mutex;
     bool text_requested{}, text_active{};
     int display_mode = -1; ///< applied VwSettings display mode (window thread)
+    int window_size = 0;   ///< applied VwSettings window size (window thread)
     void ApplyDisplayMode(int mode);
     int text_state{};
     std::string text, text_prompt, base_title;
