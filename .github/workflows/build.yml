@@ -1,7 +1,8 @@
 # Builds the release packages for every pull request and every merge to main:
 #   Linux:   Unicorn-Overlord-x86_64.AppImage (built on Ubuntu 22.04: runs on glibc 2.35 and newer)
 #   Windows: Unicorn-Overlord-PC-windows.zip (MSYS2 CLANG64; the program, _internal/, licenses)
-# On main, the "latest" pre-release is replaced with the new files. A pushed vMAJOR.MINOR.PATCH tag
+# On main, the "latest" pre-release is replaced with the new files (notes: the pull requests merged
+# since the last published release). A pushed vMAJOR.MINOR.PATCH tag
 # publishes that release (notes: the tag's message); the start program offers it as an update
 # (scripts/updates.py). Every release carries SHA256SUMS, which the updater checks.
 # The job names (Linux, Windows) are the required status checks of the main branch protection.
@@ -193,8 +194,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Notes: what this build is, .github/prerelease-notes.md, then the pull requests merged since
+          # the last published release (GitHub's generated notes, appended after --notes).
+          since=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          intro="Test build of \`main\` at ${GITHUB_SHA}, made by the Build workflow after every merge. It is not a release: it has not been play-tested like one. No game files included. The list at the end covers the changes since ${since}."
           gh release delete latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create latest --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "Latest build ($(echo "$GITHUB_SHA" | cut -c1-7))" \
-            --notes "Built from ${GITHUB_SHA} by the Build workflow. Test build: no game files included." \
+            --notes "$(printf '%s\n\n%s\n' "$intro" "$(cat .github/prerelease-notes.md)")" \
+            --generate-notes --notes-start-tag "$since" \
             release/*

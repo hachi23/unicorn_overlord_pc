@@ -8,7 +8,7 @@
 |---|---|---|
 | Linux | Ubuntu 22.04, GCC 14 | `Unicorn-Overlord-x86_64.AppImage` (runs on glibc 2.35 and newer: Ubuntu 22.04+, Debian 12+, SteamOS 3.5+) |
 | Windows | MSYS2 CLANG64 | `Unicorn-Overlord-PC-windows.zip` (the start program, `_internal/`, licenses and help) |
-| Publish | main and `v*` tags | main: replaces the `latest` pre-release; a `vX.Y.Z` tag: publishes that release. Both with `SHA256SUMS` |
+| Publish | main and `v*` tags | main: replaces the `latest` pre-release, with notes that list the pull requests merged since the last published release; a `vX.Y.Z` tag: publishes that release. Both with `SHA256SUMS` |
 
 Every run keeps both files as workflow artifacts (Actions tab → the run → Artifacts), so a pull
 request can be tested before it is merged. Both packages store their version (`git describe`) in
