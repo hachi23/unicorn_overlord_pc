@@ -802,6 +802,42 @@ def export_text(game_info, data, out):
         root.destroy()
 
 
+def import_switch_saves(data, source=None):
+    """--import-switch-save [folder or file]: converts Switch saves into the port's save slots
+    (also when the folder is dropped on the program). Asks for the folder when none is given."""
+    import switch_save
+    from tkinter import filedialog, messagebox
+    root = tk_root()
+    title = 'Import Switch saves'
+    try:
+        if not source:
+            source = filedialog.askdirectory(parent=root, title='The folder with the Switch saves '
+                                             '(UCSAVEFILE00_AUTOSAVE.DAT, UCSAVEFILE01.DAT, ...)')
+            if not source:
+                return 0
+        files = switch_save.switch_files(source)
+        if not files or any(slot is None for slot, _ in files):
+            messagebox.showerror(title, f'No Switch save (UCSAVEFILE00_AUTOSAVE.DAT, '
+                                 f'UCSAVEFILE01.DAT, ...) was found in\n{source}', parent=root)
+            return 1
+        names = '\n'.join(f'{path.name}  →  {"Auto" if slot == 0 else f"slot {slot:02d}"}'
+                          for slot, path in files)
+        if not messagebox.askokcancel(title, f'{names}\n\nThese slots are replaced; close the game first. Your current '
+                                      'saves are backed up first (data/user/savedata_backups).',
+                                      parent=root):
+            return 0
+        user = Path(os.environ.get('VW_USER_DIR', data / 'user'))
+        try:
+            switch_save.import_all(source, user)
+        except ValueError as error:
+            messagebox.showerror(title, str(error), parent=root)
+            return 1
+        messagebox.showinfo(title, 'Done. They are in Load Game.', parent=root)
+        return 0
+    finally:
+        root.destroy()
+
+
 def main(key):
     """Runs the setup and the game for GAMES[key], or one of the packaged roles (--run, --script)."""
     restore_library_path()
@@ -821,6 +857,11 @@ def main(key):
         finally:
             root.destroy()
         sys.exit(0)
+    if '--import-switch-save' in args:
+        after = args[args.index('--import-switch-save') + 1:]
+        sys.exit(import_switch_saves(data, after[0] if after else None))
+    if len(args) == 1 and Path(args[0]).exists():  # a folder or file dropped on the program
+        sys.exit(import_switch_saves(data, args[0]))
     if '--export-text' in args:
         sys.exit(export_text(game_info, data, args[args.index('--export-text') + 1:][:1]))
     settings = load_settings(data)
