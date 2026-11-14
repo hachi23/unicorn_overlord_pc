@@ -52,7 +52,11 @@ struct Values {
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
+    /// 0 native, 1 shadPS4: the game executable run.py starts (renderer=; bin/shadps4/ has the
+    /// shadPS4 one). Switching needs a restart.
+    std::atomic<int> renderer{0};
     int startup_render_resolution = 0, startup_aspect_ratio = 0, startup_text_language = 0;
+    int startup_renderer = 0;
     bool startup_deferred_readback = true, startup_stale_readback = true;
 };
 
