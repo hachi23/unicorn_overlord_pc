@@ -87,8 +87,9 @@ Settings are saved in `vw.ini`; **Restore Defaults** resets them too.
 > change it in the game's **System → Options → PC** section, close and relaunch the game.
 
 In game, **Insert** (R3+L2 on a controller) opens the port's overlay menu with every setting, and a
-**Quit game** button at the bottom (the game has none of its own). It has
-four tabs:
+**Quit game** button at the bottom. The game's own menus also get an **Exit Game** entry: on the
+title menu and in the System submenu of the battle map's Stage Menu and the world map's
+Overworld Menu (with the game's Yes/No question). The menu has four tabs:
 
 - **Image:** display mode, VSync, **Anime4K**, FSR 1 and RCAS sharpening. Anime4K (Fast or
   Quality) redraws the game's line art sharper; when the window is more than 1.2 times the game's

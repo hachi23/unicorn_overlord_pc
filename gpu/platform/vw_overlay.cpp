@@ -16,6 +16,7 @@
 #include "vw_settings.h"
 #include "vw_graphics.h"
 #include "vw_perf_stats.h"
+#include "../vwgpu.h"
 
 extern "C" {
 void runtime_restart(void); // src/probe.c: starts run.py again, ends this process
@@ -636,10 +637,7 @@ void Menu() {
     if (ImGui::BeginPopupModal("Quit the game?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("Progress since your last save is lost.");
         if (ImGui::Button("Quit")) {
-            VwSettings::Save();
-            SDL_Event quit{};
-            quit.type = SDL_EVENT_QUIT;
-            SDL_PushEvent(&quit);
+            vwgpu_quit();
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -1237,3 +1235,10 @@ void Render(VkCommandBuffer cmdbuf, VkImageView view, VkExtent2D extent) {
 }
 
 } // namespace VwOverlay
+
+extern "C" void vwgpu_quit(void) {
+    VwSettings::Save();
+    SDL_Event quit{};
+    quit.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&quit);
+}

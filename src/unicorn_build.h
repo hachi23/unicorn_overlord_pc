@@ -15,8 +15,11 @@ enum { UNICORN_V0104, UNICORN_HK0105 };
 static int unicorn_build = UNICORN_V0104;
 
 static const struct { uint32_t start, end; int32_t shift; } unicorn_hk0105_ranges[] = {
+    {0x4c0, 0x4c7, 0},           /* fade to a color (Exit Game) */
+    {0x9760, 0x9767, 0},         /* operator new (Exit Game) */
     {0x2b550, 0x2b5d1, 384},     /* FUN_0002b590, the text lookup */
-    {0x2c590, 0x2c591, 384},     /* FUN_0002c590, a text object's text */
+    {0x2c590, 0x2c59c, 384},     /* FUN_0002c590, a text object's text */
+    {0x32fc0, 0x33037, 384},     /* text: show, stop (Exit Game) */
     {0x3d9bd, 0x3e31d, 384},     /* render size getters */
     {0x3ede0, 0x3ede1, 400},     /* fill memory (native renderer hook) */
     {0x1fdf80, 0x1fe000, 944},   /* CRILAYLA decompressor */
@@ -25,17 +28,25 @@ static const struct { uint32_t start, end; int32_t shift; } unicorn_hk0105_range
     {0x218ae0, 0x21c1f1, 960},   /* Gnmx: LCUE resources, shaders, submit, viewport (same) */
     {0x233df4, 0x234d1b, 960},   /* text language, 2D ortho */
     {0x2377d0, 0x2379f0, 960},   /* battle map size limit */
+    {0x280a50, 0x280db4, 992},   /* text: restart, set id (Exit Game) */
     {0x2e0d9a, 0x2e186b, 2544},  /* battle map camera clamp */
     {0x3860e1, 0x38692b, 3008},  /* fade, haze */
+    {0x5c9d00, 0x5c9d08, 5248},  /* sound (Exit Game) */
     {0x735370, 0x73a01e, -9936}, /* Options screen */
+    {0x77ec06, 0x7806fc, -10112}, /* world map menu: System (Exit Game) */
+    {0x7827d0, 0x7827d6, -10096}, /* world map menu: builder */
+    {0x7dc30d, 0x7de9e6, -9024}, /* battle map menu: System, builder */
     {0x940e39, 0x9458e8, -9616}, /* weather layer */
+    {0x9e9900, 0x9ed29a, -8848}, /* widgets: leave a list, add, button (Exit Game) */
     {0xa27ad2, 0xa27bfe, -8848}, /* speech bubble text */
+    {0xa4201b, 0xa4a728, -8736}, /* title menu, rodata: menu text color (Exit Game) */
     {0xaf1f50, 0xaf1fe0, -8672}, /* rodata: full-screen fill corners */
     {0xaf26f0, 0xaf26f8, -8672}, /* rodata: RENDERBUFFER heap size */
     {0xaf3164, 0xaf3390, -8624}, /* rodata: screen size floats, 9/16 */
     {0xd7c900, 0xd7cbec, -8384}, /* rodata: Options tables */
     {0x14fcd70, 0x14fcdf0, 0},   /* .data: slider table */
     {0x1600ca8, 0x1602b18, 0},   /* .data: post-processing quad and rectangle */
+    {0x21d7500, 0x21d7508, 32},  /* .bss: the go-to-title request (Exit Game) */
 };
 
 /* A v01.04 image offset in the running build; 0 (no patch matches there) when it is outside
