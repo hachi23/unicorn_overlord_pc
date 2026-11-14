@@ -18,6 +18,7 @@
 #include "native_gfx.h"
 
 #define NATIVE_INTERP_JUMP 0.35f
+#define NATIVE_INTERP_MAX_FPS 240 /* presents per second, at most */
 #define NATIVE_INTERP_NEAR 0.05f /* an own-order partner this close is taken without a search */
 
 typedef struct {

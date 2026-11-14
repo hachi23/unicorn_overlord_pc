@@ -140,6 +140,8 @@ path, unchanged.
 **How to use it.** Turn on "Frame interpolation" in the Insert menu (Image tab, under VSync).
 - It is saved as `frame_interpolation=` in `vw.ini`; `VW_INTERP=1` or `0` overrides it.
 - It switches live. When it is off, the old path runs unchanged.
+- Presents are capped at 240 per second (`NATIVE_INTERP_MAX_FPS`): each one is a full replay, so
+  an uncapped fast GPU only burns power past what a display shows.
 
 **Code**
 - `src/native_interp.h`: matching and blending.

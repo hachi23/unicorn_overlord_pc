@@ -1586,6 +1586,14 @@ int native_interp_next(void **image, uint32_t *width, uint32_t *height, int wait
         pthread_mutex_unlock(&interp_lock);
         return 0;
     }
+    /* At most NATIVE_INTERP_MAX_FPS presents per second: every present is a full replay, and more
+     * than a display can show only heats the GPU. */
+    static uint64_t last_present;
+    const uint64_t gap = 1000000000ull / NATIVE_INTERP_MAX_FPS, now = clock_ns();
+    if (last_present && now - last_present < gap) {
+        const uint64_t rest = gap - (now - last_present);
+        nanosleep(&(struct timespec){0, (long)rest}, NULL);
+    }
     pthread_mutex_lock(&interp_lock);
     /* Nothing new to show: no arrival, and the newest frame was shown at alpha 1. */
     while (!interp_queued && (!interp_current || interp_shown_alpha >= 1.0f))
@@ -1602,6 +1610,7 @@ int native_interp_next(void **image, uint32_t *width, uint32_t *height, int wait
     pthread_mutex_lock(&render_mutex);
     interp_advance(arrivals, count);
     const uint64_t start = clock_ns();
+    last_present = start;
     float alpha = interp_previous ? (float)(start - interp_arrival_ns) / (float)period : 1.0f;
     alpha = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
     native_interp_apply(&interp_plan, alpha);
