@@ -25,9 +25,6 @@ struct Values {
     /// Index into VwGraphics::WindowSizes: the window's size in Windowed mode.
     std::atomic<int> window_size{0};
     std::atomic<bool> vsync{true};
-    /// Frame interpolation (docs/dev/FRAME_INTERPOLATION.md): frames blended between the game's
-    /// 60, shown at the display rate. VW_INTERP overrides.
-    std::atomic<bool> frame_interpolation{false};
     std::atomic<bool> fsr1{false};
     /// Anime4K preset (VwGraphics::Anime4k), before FSR 1.
     std::atomic<int> anime4k{0};
