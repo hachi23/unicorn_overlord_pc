@@ -187,13 +187,18 @@ jobs:
           cp artifacts/linux/*.AppImage artifacts/linux/*-source-*.tar.gz artifacts/linux/*-linux-symbols-*.tar.gz \
             artifacts/windows/*-windows.zip artifacts/windows/*-windows-symbols-*.tar.gz release/
           (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)
-      - name: Publish the tagged release
+      - name: Add to the main build's release
+        # Tag v1.6.0-shadps4 adds this edition's files to release v1.6.0 (published from main
+        # first), with its checksums merged into that release's SHA256SUMS.
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag --latest=false \
-            --title "$GITHUB_REF_NAME" release/*
+          base="${GITHUB_REF_NAME%-shadps4}"
+          gh release download "$base" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --output main.sums
+          (cat main.sums; cat release/SHA256SUMS) > merged.sums
+          mv merged.sums release/SHA256SUMS
+          gh release upload "$base" --repo "$GITHUB_REPOSITORY" --clobber release/*
       - name: Replace the "latest" pre-release
         if: github.ref == 'refs/heads/main'
         env:
