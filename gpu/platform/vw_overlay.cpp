@@ -16,6 +16,7 @@
 #include "vw_settings.h"
 #include "vw_graphics.h"
 #include "vw_perf_stats.h"
+#include "../vwgpu.h"
 
 extern "C" {
 void runtime_restart(void); // src/probe.c: starts run.py again, ends this process
@@ -278,6 +279,10 @@ void ImageTab() {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
                   "Windowed, borderless window or exclusive fullscreen.");
         CheckRow("VSync", s.vsync, "Waits for the monitor: no tearing, a little more input delay.");
+        CheckRow("Frame interpolation", s.frame_interpolation,
+                 "Shows frames blended between the game's 60, as many as the display and GPU allow. "
+                 "Needs a display faster than 60 Hz to look smoother; adds one frame of input delay. "
+                 "Experimental.");
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
@@ -636,10 +641,7 @@ void Menu() {
     if (ImGui::BeginPopupModal("Quit the game?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("Progress since your last save is lost.");
         if (ImGui::Button("Quit")) {
-            VwSettings::Save();
-            SDL_Event quit{};
-            quit.type = SDL_EVENT_QUIT;
-            SDL_PushEvent(&quit);
+            vwgpu_quit();
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -1237,3 +1239,10 @@ void Render(VkCommandBuffer cmdbuf, VkImageView view, VkExtent2D extent) {
 }
 
 } // namespace VwOverlay
+
+extern "C" void vwgpu_quit(void) {
+    VwSettings::Save();
+    SDL_Event quit{};
+    quit.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&quit);
+}

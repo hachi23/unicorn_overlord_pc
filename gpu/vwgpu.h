@@ -59,6 +59,9 @@ int vwgpu_setting_rows(const VwgpuSettingRow **rows);
 float vwgpu_setting_value(int row);
 /* Applies a row's value at once and writes vw.ini. */
 void vwgpu_setting_set(int row, float value);
+/* Saves vw.ini and closes the window, as closing it does (the game's Exit Game, the Insert
+ * menu's Quit game). Any thread. */
+void vwgpu_quit(void);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned vwgpu_symbol_count(void);
 /* The native renderer (src/native_vk.c) shares the presenter's Vulkan device: its handles
@@ -72,6 +75,14 @@ void vwgpu_queue_unlock(void);
  * fragment shader to sample in SHADER_READ_ONLY_OPTIMAL once earlier queue work completes;
  * 0 when it has none (the presenter then uses its own). */
 int native_present_image(uint64_t address, void **image, uint32_t *width, uint32_t *height);
+/* Frame interpolation (VW_INTERP=1, docs/dev/FRAME_INTERPOLATION.md). native_interp_active: the
+ * mode is on (the flip thread then leaves presenting to the present thread). native_interp_next:
+ * replays the newest game frame blended toward it by the time since it arrived and returns its
+ * image as native_present_image does; 0 when nothing new came within wait_ms. */
+int native_interp_active(void);
+/* The frame_interpolation setting (vw.ini, the menu, VW_INTERP); native_interp_active reads it. */
+int vwgpu_frame_interpolation(void);
+int native_interp_next(void **image, uint32_t *width, uint32_t *height, int wait_ms);
 #ifdef __cplusplus
 }
 #endif

@@ -87,14 +87,18 @@ Settings are saved in `vw.ini`; **Restore Defaults** resets them too.
 > change it in the game's **System → Options → PC** section, close and relaunch the game.
 
 In game, **Insert** (R3+L2 on a controller) opens the port's overlay menu with every setting, and a
-**Quit game** button at the bottom (the game has none of its own). It has
-four tabs:
+**Quit game** button at the bottom. The game's own menus also get an **Exit Game** entry: on the
+title menu and in the System submenu of the battle map's Stage Menu and the world map's
+Overworld Menu (with the game's Yes/No question). The menu has four tabs:
 
 - **Image:** display mode, VSync, **Anime4K**, FSR 1 and RCAS sharpening. Anime4K (Fast or
   Quality) redraws the game's line art sharper; when the window is more than 1.2 times the game's
   image both ways, it also doubles the image before FSR 1 and the scaling. It costs GPU time per
   frame, measured on an RX 560X-class GPU at 1080p: Fast 3.3 ms, Quality 7.5 ms (a frame at 60 FPS
-  has 16.7 ms), so Quality is meant for a stronger GPU.
+  has 16.7 ms), so Quality is meant for a stronger GPU. **Frame interpolation** (experimental,
+  off by default) shows frames blended between the game's 60 at your display's refresh rate; the
+  game itself keeps running at 60. It only looks smoother on a display faster than 60 Hz, adds
+  one frame of input delay, and each extra frame costs a full redraw on the GPU.
 - **Performance:** render resolution, frames queued and the GPU readback options.
 - **Overlay:** the performance overlay.
 - **Controls:** keyboard and controller button bindings, saved in `vw.ini`, and the
