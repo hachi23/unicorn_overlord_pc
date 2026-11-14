@@ -22,7 +22,7 @@
 #define NATIVE_INTERP_NEAR 0.05f /* an own-order partner this close is taken without a search */
 
 typedef struct {
-    uint64_t key;
+    uint64_t key, target;
     uint32_t ordinal, group;       /* group: draws with this key in the frame */
     float *vs, *ps;                /* the slot 0 constants' first 16 floats, or NULL */
     float x, y;                    /* where the matrix puts the origin (normalised device units) */
@@ -76,7 +76,7 @@ static InterpFrame interp_scan(const NativeList *lists) {
                 k = interp_hash(&vs, 4, k), k = interp_hash(&ps, 4, k), k = interp_hash(&tex0, 8, k);
                 k = interp_hash(&d->index_count, 4, k);
                 InterpDraw *nd = &f.draws[f.count++];
-                *nd = (InterpDraw){.key = k, .vs = vs_m, .ps = ps_m};
+                *nd = (InterpDraw){.key = k, .target = target, .vs = vs_m, .ps = ps_m};
                 const float *m = vs_m ? vs_m : ps_m;
                 if (m) {
                     float at2[2];
@@ -114,10 +114,6 @@ typedef struct { uint32_t pairs, snapped, blended, cut; } InterpStats;
 typedef struct { float *dst; float from[16], to[16]; } InterpBlock;
 typedef struct { InterpBlock *blocks; size_t count; InterpStats stats; } InterpPlan;
 
-static float interp_distance(const InterpDraw *a, const InterpDraw *b) {
-    return fmaxf(fabsf(a->x - b->x), fabsf(a->y - b->y));
-}
-
 /* Old draws in key order, then by x: a window of x is a range. */
 static const InterpDraw *interp_sort_base;
 static int interp_by_key_x(const void *a, const void *b) {
@@ -129,6 +125,104 @@ static int interp_by_key_x(const void *a, const void *b) {
 static int interp_by_dst(const void *a, const void *b) {
     const InterpBlock *x = a, *y = b;
     return x->dst < y->dst ? -1 : x->dst > y->dst;
+}
+
+static float interp_distance_to(const InterpDraw *a, float x, float y) {
+    return fmaxf(fabsf(a->x - x), fabsf(a->y - y));
+}
+
+/* The old draws of one key (o->draws[start..end), by_x sorted by x within it) not yet paired. */
+typedef struct {
+    const InterpFrame *o;
+    const uint32_t *by_x;
+    const uint8_t *used;
+    size_t start, end;
+} InterpWindow;
+
+/* The closest unpaired old draw to (x, y) nearer than limit, or SIZE_MAX. */
+static size_t interp_nearest(const InterpWindow *w, float x, float y, float limit, float *distance) {
+    size_t lo = w->start, hi = w->end, best = SIZE_MAX;
+    while (lo < hi) {
+        const size_t mid = (lo + hi) / 2;
+        if (w->o->draws[w->by_x[mid]].x < x - limit) lo = mid + 1; else hi = mid;
+    }
+    for (size_t j = lo; j < w->end && w->o->draws[w->by_x[j]].x <= x + limit; ++j) {
+        const size_t k = w->by_x[j];
+        if (w->used[k]) continue;
+        const float t = interp_distance_to(&w->o->draws[k], x, y);
+        if (t + 1e-5f < limit) best = k, limit = t;
+    }
+    if (best != SIZE_MAX) *distance = limit;
+    return best;
+}
+
+/* How well a key's new draws fit the old ones moved by (sx, sy): the sum of each one's distance
+ * to the closest old draw, NATIVE_INTERP_JUMP for none. Lower is better. */
+static float interp_fit(const InterpWindow *w, const InterpDraw *draws, size_t count, float sx, float sy) {
+    float sum = 0;
+    for (size_t i = 0; i < count; ++i) {
+        float t = NATIVE_INTERP_JUMP;
+        interp_nearest(w, draws[i].x - sx, draws[i].y - sy, t, &t);
+        sum += t;
+    }
+    return sum;
+}
+
+/* The camera's motion per render target: the median move of the draws whose partner is certain
+ * (a key with the same number of draws in both frames, paired in order) and that moved. A fast
+ * pan moves the scene further than sprites are apart (about 80 px a frame on the battle map at
+ * cursor speed), so the nearest old sprite of a key is often another one; searching where the
+ * camera says a sprite was finds its own. */
+typedef struct { uint64_t target; float dx, dy; } InterpShift;
+
+static int interp_by_float(const void *a, const void *b) {
+    const float x = *(const float *)a, y = *(const float *)b;
+    return x < y ? -1 : x > y;
+}
+static int interp_by_target(const void *a, const void *b) {
+    const InterpShift *x = a, *y = b;
+    return x->target < y->target ? -1 : x->target > y->target;
+}
+
+static size_t interp_shifts(const InterpFrame *o, const InterpFrame *n, InterpShift **out) {
+    InterpShift *moves = malloc((n->count + 1) * sizeof(*moves));
+    size_t count = 0;
+    for (size_t i = 0, start = 0; i < n->count; ++i) {
+        const InterpDraw *d = &n->draws[i];
+        if (d->ordinal == 0) {
+            const InterpDraw probe = {.key = d->key, .ordinal = 0};
+            const InterpDraw *run = bsearch(&probe, o->draws, o->count, sizeof(probe), interp_order);
+            start = run && run->group == d->group ? (size_t)(run - o->draws) : SIZE_MAX;
+        }
+        if (start == SIZE_MAX || !d->vs) continue;
+        const InterpDraw *p = &o->draws[start + d->ordinal];
+        const float dx = d->x - p->x, dy = d->y - p->y;
+        if (fabsf(dx) + fabsf(dy) > 1e-5f && fmaxf(fabsf(dx), fabsf(dy)) < NATIVE_INTERP_JUMP)
+            moves[count++] = (InterpShift){d->target, dx, dy};
+    }
+    qsort(moves, count, sizeof(*moves), interp_by_target);
+    float *xs = malloc((count + 1) * sizeof(*xs)), *ys = malloc((count + 1) * sizeof(*ys));
+    size_t kept = 0;
+    for (size_t i = 0; i < count;) {
+        size_t j = i;
+        while (j < count && moves[j].target == moves[i].target) xs[j - i] = moves[j].dx, ys[j - i] = moves[j].dy, ++j;
+        if (j - i >= 4) { /* a few moved draws are animation, not a camera */
+            qsort(xs, j - i, sizeof(*xs), interp_by_float);
+            qsort(ys, j - i, sizeof(*ys), interp_by_float);
+            moves[kept++] = (InterpShift){moves[i].target, xs[(j - i) / 2], ys[(j - i) / 2]};
+        }
+        i = j;
+    }
+    free(xs);
+    free(ys);
+    *out = moves;
+    return kept;
+}
+
+static void interp_shift_of(const InterpShift *shifts, size_t count, uint64_t target, float *dx, float *dy) {
+    const InterpShift probe = {.target = target};
+    const InterpShift *s = bsearch(&probe, shifts, count, sizeof(probe), interp_by_target);
+    if (s) *dx = s->dx, *dy = s->dy;
 }
 
 /* What to blend from old to new (once per new frame). Every new draw takes the closest unused
@@ -158,51 +252,59 @@ static InterpPlan native_interp_plan_from(const InterpFrame *old_scan, NativeLis
     interp_sort_base = o.draws;
     qsort(by_x, o.count, sizeof(*by_x), interp_by_key_x);
     plan.blocks = malloc((n.count * 2 + 1) * sizeof(*plan.blocks));
+    InterpShift *shifts = NULL;
+    const size_t shift_count = interp_shifts(&o, &n, &shifts);
     size_t changed = 0, jumped = 0;
-    for (size_t i = 0; i < n.count; ++i) {
-        const InterpDraw *d = &n.draws[i];
-        const InterpDraw first = {.key = d->key, .ordinal = 0};
-        const InterpDraw *run = bsearch(&first, o.draws, o.count, sizeof(*d), interp_order);
-        if (!run) continue;
+    for (size_t first = 0; first < n.count;) {
+        size_t last = first;
+        while (last < n.count && n.draws[last].key == n.draws[first].key) ++last;
+        const InterpDraw probe = {.key = n.draws[first].key, .ordinal = 0};
+        const InterpDraw *run = bsearch(&probe, o.draws, o.count, sizeof(probe), interp_order);
+        if (!run) { first = last; continue; }
         const size_t start = (size_t)(run - o.draws), end = start + run->group;
-        size_t best = SIZE_MAX;
-        float best_distance = NATIVE_INTERP_JUMP;
-        if (d->ordinal < run->group && !used[start + d->ordinal]) {
-            const float t = interp_distance(d, &o.draws[start + d->ordinal]);
-            if (t < best_distance) best = start + d->ordinal, best_distance = t;
+        /* Where the old frame had this key's draws: in place (HUD) or moved with the camera. */
+        float sx = 0, sy = 0;
+        interp_shift_of(shifts, shift_count, n.draws[first].target, &sx, &sy);
+        if (sx != 0 || sy != 0) {
+            const InterpWindow w = {&o, by_x, used, start, end};
+            if (interp_fit(&w, n.draws + first, last - first, 0, 0) <= interp_fit(&w, n.draws + first, last - first, sx, sy))
+                sx = sy = 0;
         }
-        /* Same number of draws and its own partner close by: no search. */
-        const int settled = run->group == d->group && best != SIZE_MAX && best_distance < NATIVE_INTERP_NEAR;
-        if (!settled && best_distance > 1e-5f) {
-            /* Only old draws with |x - d.x| < best can be closer. */
-            size_t lo = start, hi = end;
-            while (lo < hi) {
-                const size_t mid = (lo + hi) / 2;
-                if (o.draws[by_x[mid]].x < d->x - best_distance) lo = mid + 1; else hi = mid;
+        for (size_t i = first; i < last; ++i) {
+            const InterpDraw *d = &n.draws[i];
+            const float px = d->x - sx, py = d->y - sy; /* where it was, if it moved with its key */
+            size_t best = SIZE_MAX;
+            float best_distance = NATIVE_INTERP_JUMP;
+            if (d->ordinal < run->group && !used[start + d->ordinal]) {
+                const float t = interp_distance_to(&o.draws[start + d->ordinal], px, py);
+                if (t < best_distance) best = start + d->ordinal, best_distance = t;
             }
-            for (size_t j = lo; j < end && o.draws[by_x[j]].x <= d->x + best_distance; ++j) {
-                const size_t k = by_x[j];
-                if (used[k]) continue;
-                const float t = interp_distance(d, &o.draws[k]);
-                if (t + 1e-5f < best_distance) best = k, best_distance = t;
+            /* Same number of draws and its own partner close by: no search. */
+            const int settled = run->group == d->group && best != SIZE_MAX && best_distance < NATIVE_INTERP_NEAR;
+            if (!settled && best_distance > 1e-5f) {
+                const InterpWindow w = {&o, by_x, used, start, end};
+                const size_t k = interp_nearest(&w, px, py, best_distance, &best_distance);
+                if (k != SIZE_MAX) best = k;
+            }
+            if (best == SIZE_MAX) { ++plan.stats.snapped, ++jumped, ++changed; continue; }
+            used[best] = 1;
+            ++plan.stats.pairs;
+            const InterpDraw *p = &o.draws[best];
+            const float *pairs[2][2] = {{d->vs, p->vs}, {d->ps, p->ps}};
+            for (int k = 0; k < 2; ++k) {
+                float *dst = (float *)pairs[k][0];
+                const float *from = pairs[k][1];
+                if (!dst || !from || !memcmp(dst, from, 64)) continue;
+                ++changed;
+                InterpBlock *b = &plan.blocks[plan.count++];
+                b->dst = dst;
+                memcpy(b->from, from, 64);
+                memcpy(b->to, dst, 64);
             }
         }
-        if (best == SIZE_MAX) { ++plan.stats.snapped, ++jumped, ++changed; continue; }
-        used[best] = 1;
-        ++plan.stats.pairs;
-        const InterpDraw *p = &o.draws[best];
-        const float *pairs[2][2] = {{d->vs, p->vs}, {d->ps, p->ps}};
-        for (int k = 0; k < 2; ++k) {
-            float *dst = (float *)pairs[k][0];
-            const float *from = pairs[k][1];
-            if (!dst || !from || !memcmp(dst, from, 64)) continue;
-            ++changed;
-            InterpBlock *b = &plan.blocks[plan.count++];
-            b->dst = dst;
-            memcpy(b->from, from, 64);
-            memcpy(b->to, dst, 64);
-        }
+        first = last;
     }
+    free(shifts);
     /* Most draws losing their partner is a cut: show the new frame as it is. */
     plan.stats.cut = changed >= 8 && jumped * 2 > changed;
     if (plan.stats.cut) plan.count = 0;

@@ -145,12 +145,38 @@ int main(void) {
     nth(c1, 5, v), assert(near(v[0], 1.5f));
     restore(&plan);
 
+    /* A fast pan: the camera moves 0.08 a frame, trees are 0.05 apart and one comes into view.
+     * The nearest old tree is often the neighbour; with the camera's move (from the single
+     * terrain pieces) each tree finds its own, and the HUD sprite of the same kind stays put. */
+    float pan0[13][3], pan1[14][3];
+    int m0 = 0, m1 = 0;
+    for (int i = 0; i < 6; ++i) { /* terrain: one draw per texture, so certain partners */
+        pan0[m0][0] = pan1[m1][0] = (float)(20 + i);
+        pan0[m0][1] = -0.5f + 0.2f * i, pan0[m0++][2] = -0.3f;
+        pan1[m1][1] = -0.5f + 0.2f * i - 0.08f, pan1[m1++][2] = -0.3f;
+    }
+    for (int i = 5; i >= 0; --i) { /* trees, texture 4, drawn right to left */
+        pan0[m0][0] = pan1[m1][0] = 4;
+        pan0[m0][1] = 0.05f * i, pan0[m0++][2] = 0.2f;
+        pan1[m1][1] = 0.05f * i - 0.08f, pan1[m1++][2] = 0.2f;
+    }
+    pan1[m1][0] = 4, pan1[m1][1] = 0.30f - 0.08f + 0.05f, pan1[m1++][2] = 0.2f; /* enters at the right */
+    pan0[m0][0] = pan1[m1][0] = 4; /* HUD icon drawn like a tree: stays */
+    pan0[m0][1] = pan1[m1][1] = 0.9f, pan0[m0++][2] = pan1[m1++][2] = 0.9f;
+    NativeList *f0 = frame((const float (*)[3])pan0, m0), *f1 = frame((const float (*)[3])pan1, m1);
+    s = blend(f0, f1, 0.5f, &plan);
+    for (int i = 0; i < 6; ++i) nth(f1, 11 - i, v), assert(near(v[0], 0.05f * i - 0.04f));
+    nth(f1, 12, v), assert(near(v[0], 0.27f)); /* new: as it is */
+    nth(f1, 13, v), assert(near(v[0], 0.9f) && near(v[1], 0.9f));
+    assert(!s.cut && s.snapped == 1);
+    restore(&plan);
+
     /* No old frame: nothing to do. */
     s = blend(NULL, n, 0.5f, &plan);
     assert(s.pairs == 0 && plan.count == 0 && !memcmp(n->data, pristine->data, n->used));
     restore(&plan);
 
-    NativeList *all[] = {o, n, pristine, n2, p0, p1, n3, c0, c1};
+    NativeList *all[] = {o, n, pristine, n2, p0, p1, n3, c0, c1, f0, f1};
     for (size_t i = 0; i < sizeof(all) / sizeof(*all); ++i) native_list_free(all[i]);
     printf("native interp: ok\n");
     return 0;

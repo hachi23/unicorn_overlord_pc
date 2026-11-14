@@ -161,6 +161,13 @@ path, unchanged.
   to 6-44 per frame.
 - A draw keeps its own-order partner without a search when the group is the same size and the
   partner is within 0.05.
+- **Camera motion is taken out before pairing** (fixes trees scrambling during fast pans in the
+  first battle, reported from Windows). At cursor speed (RB + stick) the battle map moves about
+  80 px per game frame, more than trees are apart, so a tree's nearest old tree was often its
+  neighbour. Each render target's move is the median move of draws whose partner is certain (a
+  key with the same number of draws in both frames, paired in order). For every key, the search
+  looks where that move says the draw was, unless "not moved" fits the key's draws better (the
+  HUD). Test: the fast-pan case in `tests/test_native_interp.c`, which fails on the old matching.
 
 **Checked by picture**, with frame pairs at alpha 0, 1/4, 1/2, 3/4 and 1:
 
