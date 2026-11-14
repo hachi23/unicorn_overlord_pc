@@ -56,8 +56,8 @@ It has both renderers, and you can [switch between them](#switching-the-renderer
 
 The shadPS4 renderer is built from the
 [`shadps4-edition`](https://github.com/hachi23/unicorn_overlord_pc/tree/shadps4-edition) branch.
-v1.6.0 also had separate shadPS4-edition downloads (`Unicorn-Overlord-shadPS4-...`); they are no
-longer needed.
+Releases also carry the shadPS4 edition (`Unicorn-Overlord-shadPS4-...`), with only the shadPS4
+renderer, so installs of it keep updating. New installs don't need it.
 
 - **Linux:** make the `.AppImage` executable (`chmod +x`) and run it. It keeps its `data/`
   folder next to the `.AppImage`.
