@@ -5,10 +5,18 @@
 
 A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlord**.
 
-> **No longer developed.** If the experimental native renderer gives you trouble, switch to the
-> shadPS4 renderer in the game: **Insert** (or R3+L2) > **Performance** > **Renderer** >
-> **shadPS4**, then **Apply and restart** ([details](#switching-the-renderer)). Older builds are
-> on the [releases page](https://github.com/hachi23/unicorn_overlord_pc/releases).
+## ⚠️ Graphics problems? Switch to shadPS4.
+
+### In the game: Insert (or R3+L2) > Performance > Renderer > shadPS4 > Apply and restart.
+
+### If that does not work: download the shadPS4 edition (`Unicorn-Overlord-shadPS4-PC-windows.zip` or `Unicorn-Overlord-shadPS4-x86_64.AppImage`) from the [latest release](https://github.com/hachi23/unicorn_overlord_pc/releases/latest).
+
+The native renderer (the default since v1.6.0) is faster but experimental. shadPS4 is the
+renderer of v1.5.2 and earlier: slower, but longer tested. Since v1.6.1 the game asks which one
+to use on its first start ([details](#switching-the-renderer)).
+
+> **No longer developed.** Older builds are on the
+> [releases page](https://github.com/hachi23/unicorn_overlord_pc/releases).
 > The source is GPL-2.0-or-later: you are welcome to fork it and change it however you like.
 
 | Dump | State |
@@ -195,6 +203,8 @@ In the game, press **Insert** (or R3+L2 on a controller), open **Performance**, 
 **Renderer** to **shadPS4** or **Native (experimental)**, and choose **Apply and restart**. The game
 closes and starts again with the other renderer. Progress since your last save is lost. Your
 saves and settings are shared by both renderers.
+
+The first start of v1.6.1 or later (after an update too) asks once which renderer to use.
 
 If the game does not start with the new renderer, the next start goes back to the previous one
 by itself. To choose the renderer before the game starts, set `renderer=shadps4` or

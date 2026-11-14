@@ -838,6 +838,46 @@ def import_switch_saves(data, source=None):
         root.destroy()
 
 
+def has_shadps4():
+    """This build carries the shadPS4 renderer's game executable (bin/shadps4/, see run.py)."""
+    name = 'vwport.exe' if WINDOWS else 'vwport'
+    return any((folder / 'shadps4' / name).is_file() for folder in (RUNTIME / 'bin', RUNTIME / 'out'))
+
+
+def ask_renderer(game_info, current):
+    """Once per install (v1.6.1 brought the choice): 'native' or 'shadps4'. Closing the window
+    keeps `current`."""
+    import tkinter as tk
+    from tkinter import ttk
+    root = tk_root()
+    choice = {'value': current}
+    try:
+        window = tk.Toplevel(root)
+        window.title(f"{game_info['name']}: renderer")
+        window.resizable(False, False)
+        window.attributes('-topmost', True)
+        ttk.Label(window, padding=(16, 12, 16, 4), wraplength=480, text=(
+            'This version has two renderers. Pick the one to start with:\n\n'
+            '- Native: the port\'s own renderer. Faster, but experimental.\n'
+            '- shadPS4: the emulated PS4 GPU of v1.5.2 and earlier. Slower, but longer tested.\n\n'
+            'You can switch at any time in the game: Insert (or R3+L2) > Performance > Renderer > '
+            'Apply and restart. If the switch does not work for you, download the shadPS4 edition '
+            '(Unicorn-Overlord-shadPS4-...) from the releases page on GitHub.')).pack(fill='x')
+        buttons = ttk.Frame(window, padding=(16, 4, 16, 12))
+        buttons.pack(fill='x')
+
+        def pick(value):
+            choice['value'] = value
+            window.destroy()
+        ttk.Button(buttons, text='Native (faster)', command=lambda: pick('native')).pack(side='left')
+        ttk.Button(buttons, text='shadPS4 (as in v1.5.2)', command=lambda: pick('shadps4')).pack(side='left', padx=8)
+        window.protocol('WM_DELETE_WINDOW', lambda: pick(current))
+        window.wait_window()
+    finally:
+        root.destroy()
+    return choice['value']
+
+
 def main(key):
     """Runs the setup and the game for GAMES[key], or one of the packaged roles (--run, --script)."""
     restore_library_path()
@@ -897,6 +937,12 @@ def main(key):
         settings['english_mode'] = 1
         save_settings(data, settings)
     check_for_update(game_info, data, settings)
+    if not settings.get('renderer_asked') and not os.environ.get('VW_RENDERER') and has_shadps4():
+        import graphics_options
+        current = graphics_options.startup_options(graphics_options.read_ini(data / 'vw.ini'))['renderer']
+        graphics_options.write_keys(data / 'vw.ini', {'renderer': ask_renderer(game_info, current)})
+        settings['renderer_asked'] = 1
+        save_settings(data, settings)
     os.environ.update(VW_GAME_DIR=folder, VW_DATA_DIR=str(data), VW_CONFIG=str(data / 'vw.ini'))
     if FROZEN:
         # run.py uses the vwport of this bundle (bin/); one placed beside the program replaces it
