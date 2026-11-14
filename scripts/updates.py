@@ -29,8 +29,8 @@ import zipfile
 
 REPOSITORY = 'hachi23/unicorn_overlord_pc'
 RELEASES_URL = f'https://api.github.com/repos/{REPOSITORY}/releases?per_page=30'
-# The shadPS4 edition (branch shadps4-edition) has its own downloads and tags (v1.6.0-shadps4), so it
-# updates only to itself and the main build never to it.
+# The shadPS4 edition (branch shadps4-edition, tags v1.6.0-shadps4) has its own file names in the
+# same releases as the main build, so it updates only to itself and the main build never to it.
 ASSETS = {'windows': 'Unicorn-Overlord-shadPS4-PC-windows.zip', 'linux': 'Unicorn-Overlord-shadPS4-x86_64.AppImage'}
 SUMS = 'SHA256SUMS'
 PROGRAM_FILES_KEPT = ('data',)  # beside the program: never replaced by an update

@@ -9,8 +9,8 @@ A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlo
 > plus the later features of the main build: Exit Game in the game's menus, Quit game, the mouse on
 > the battle map, the Window size setting, the retail v01.04 `eboot.bin` and Switch save import.
 > The main build (v1.6.0 and later) replaces shadPS4 with its own renderer. Use this edition if
-> that renderer gives you trouble. Its releases are tagged `v<version>-shadps4`, and it updates
-> only to those.
+> that renderer gives you trouble. Its downloads sit in the same releases as the main build's
+> (`Unicorn-Overlord-shadPS4-...`), and it updates only to those files.
 
 | Dump | State |
 |---|---|
