@@ -17,10 +17,21 @@ class GraphicsOptionsTest(unittest.TestCase):
         self.temp.cleanup()
 
     def test_defaults_and_invalid_values(self):
-        self.ini.write_text('render_resolution=8K\naspect_ratio=5:4\nrenderer=shadps4\n', encoding='utf-8')
+        self.ini.write_text('render_resolution=8K\naspect_ratio=5:4\nrenderer=opengl\n', encoding='utf-8')
         options, reverted = g.prepare(self.ini, self.state)
         self.assertFalse(reverted)
-        self.assertEqual(options, {'render_resolution': 'native', 'aspect_ratio': '16:9'})
+        self.assertEqual(options, {'render_resolution': 'native', 'aspect_ratio': '16:9', 'renderer': 'native'})
+
+    def test_renderer_switch_reverts_when_it_never_reaches_the_game(self):
+        self.ini.write_text('renderer=native\n', encoding='utf-8')
+        g.prepare(self.ini, self.state)
+        g.write_keys(self.ini, {'renderer': 'shadps4', 'restart_unconfirmed': '1'})
+        tried, _ = g.prepare(self.ini, self.state, restarted=True)
+        self.assertEqual(tried['renderer'], 'shadps4')
+        back, reverted = g.prepare(self.ini, self.state)
+        self.assertTrue(reverted)
+        self.assertEqual(back['renderer'], 'native')
+        self.assertEqual(g.read_ini(self.ini)['renderer'], 'native')
 
     def test_write_keys_keeps_other_lines(self):
         self.ini.write_text('# comment\nshow_fps=1\nrcas=1\n', encoding='utf-8')

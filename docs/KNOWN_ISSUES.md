@@ -87,9 +87,10 @@ Measured on the test system above, 1080p, with the renderer of v1.6.0 (`VW_VSYNC
   chapter 1. Not implemented yet: depth testing and culling (nothing seen so far uses them),
   two of the game's three compute shaders, and two shaders the translator cannot find in the
   executable (`e041714c`, `546af9ea`; the log names a missing shader once). If a scene looks
-  wrong, use the shadPS4 edition from the same release (README, Download).
+  wrong, switch to the shadPS4 renderer: Insert > Performance > Renderer (README, Switching the
+  renderer).
 - **The final stage ("Unicorn Overlord") hung at its start** in testing with a save imported
-  from the Switch, on the main build and the shadPS4 edition alike. Present waits for GPU work
+  from the Switch, with the native and the shadPS4 renderer alike. Present waits for GPU work
   that never finishes. Everything before it in that save worked. A PS4 save at that stage has
   not been tried.
 - **Chapter title card shows one box in the Chinese text languages** (#49): the card that opens

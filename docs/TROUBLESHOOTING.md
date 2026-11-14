@@ -54,9 +54,10 @@ and driver version with the failed run's diagnostics.
 
 ## Black screen, wrong colours or missing graphics
 
-- The renderer is experimental (v1.6.0). Note where it happens, take a screenshot, and if you
-  can, one of the same place with v1.5.2 (the last release with the old renderer, still on the
-  releases page). Attach both and the log; the `Native:` lines in it are the useful ones.
+- The native renderer is experimental. Switch to the shadPS4 renderer: Insert > Performance >
+  Renderer > shadPS4, then Apply and restart (or `renderer=shadps4` in `data/vw.ini`). If you
+  report it, note where it happens and attach a screenshot from each renderer and the log; the
+  `Native:` lines in it are the useful ones.
 - Set the render resolution back to native (1080p).
 - If an option change stops the game from starting, the next start restores the previous
   options by itself.

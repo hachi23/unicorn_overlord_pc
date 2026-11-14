@@ -195,6 +195,26 @@ def find_executable(name):
     return None
 
 
+RENDERER_NAMES = {'native': 'native (experimental)', 'shadps4': 'shadPS4'}
+
+
+def game_executable(env, renderer):
+    """(vwport, renderer): the game executable of the chosen renderer (vw.ini renderer=, the
+    in-game menu's Renderer row), or the native one when this build has no other. The shadPS4
+    edition's is in bin/shadps4/ (packaged) or out/shadps4/ (development). VW_RENDERERS tells
+    the menu which renderers there are."""
+    name = 'vwport.exe' if WINDOWS else 'vwport'
+    if env.get('VW_PROBE'):
+        return Path(env['VW_PROBE']), renderer if renderer in RENDERER_NAMES else 'native'
+    shadps4 = find_executable(f'shadps4/{name}')
+    env['VW_RENDERERS'] = 'native,shadps4' if shadps4 else 'native'
+    if renderer == 'shadps4':
+        if shadps4:
+            return shadps4, 'shadps4'
+        LOG.write('Renderer: shadPS4 chosen, but this build has no shadps4/ folder; using the native renderer')
+    return find_executable(name), 'native'
+
+
 def main():
     args = sys.argv[1:]
     restarted = len(args) >= 2 and args[0] == '--after'  # the in-game "Apply and restart"
@@ -227,7 +247,9 @@ def main():
     diagnostics.write_summary(LOG.path, support)
     LOG.write(f'System: {support}')
 
-    probe = Path(env['VW_PROBE']) if env.get('VW_PROBE') else find_executable('vwport.exe' if WINDOWS else 'vwport')
+    probe, renderer = game_executable(env, env.get('VW_RENDERER') or graphics['renderer'])
+    LOG.write(f'Renderer: {RENDERER_NAMES[renderer]} ({probe})')
+    support['renderer'] = renderer
     if not probe or not probe.is_file():
         fail('vwport not found: build it with build.sh or use a packaged build.')
     if not WINDOWS and not os.access(probe, os.X_OK):  # bundled as data by the packaged launcher
