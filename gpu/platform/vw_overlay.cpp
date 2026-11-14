@@ -279,6 +279,10 @@ void ImageTab() {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
                   "Windowed, borderless window or exclusive fullscreen.");
         CheckRow("VSync", s.vsync, "Waits for the monitor: no tearing, a little more input delay.");
+        CheckRow("Frame interpolation", s.frame_interpolation,
+                 "Shows frames blended between the game's 60, as many as the display and GPU allow. "
+                 "Needs a display faster than 60 Hz to look smoother; adds one frame of input delay. "
+                 "Experimental.");
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;

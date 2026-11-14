@@ -147,6 +147,10 @@ extern "C" int vwgpu_handle_fault(void*, void*) {
 
 extern "C" void vwgpu_dump_guest_writes(void*) {}
 
+extern "C" int vwgpu_frame_interpolation(void) {
+    return VwSettings::Get().frame_interpolation.load(std::memory_order_relaxed);
+}
+
 extern "C" unsigned vwgpu_symbol_count(void) {
     return unsigned(Platform::symbols.size());
 }

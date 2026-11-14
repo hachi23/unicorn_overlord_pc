@@ -21,6 +21,8 @@
 #include <sys/stat.h>
 #include "../gpu/vwgpu.h"
 #include "native_gfx.h"
+#include "native_interp.h"
+#include "native_interp_probe.h"
 #include "native_gnm.h"
 #include "native_shader.h"
 #include "runtime.h"
@@ -1231,7 +1233,7 @@ enum { PRESENTS = 4 };
 static struct { VkImage image; VkDeviceMemory memory; uint32_t width, height; int used; } presents[PRESENTS];
 static struct { uint64_t address; uint32_t index; } shown[8];
 static uint32_t present_next, shown_count;
-static int present_pending = -1;
+static int present_pending = -1, present_last = -1; /* present_last: the image published last */
 static uint64_t present_pending_address;
 static pthread_mutex_t present_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -1289,6 +1291,7 @@ static void present_publish(void) {
     if (i == shown_count && shown_count < 8) ++shown_count;
     if (i < 8) { shown[i].address = present_pending_address; shown[i].index = (uint32_t)present_pending; }
     pthread_mutex_unlock(&present_mutex);
+    present_last = present_pending;
     present_pending = -1;
 }
 int native_present_image(uint64_t address, void **image, uint32_t *width, uint32_t *height) {
@@ -1350,7 +1353,10 @@ static void shot(const Target *target) {
 /* Replay and target reads both use the device state (cmd, once_cmd): one at a time. */
 static pthread_mutex_t render_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void render_frame(NativeList *lists);
+static void interp_accept(NativeList *lists);
 void native_render_frame(NativeList *lists) {
+    native_interp_probe(lists);
+    if (native_interp_active()) { interp_accept(lists); return; }
     pthread_mutex_lock(&render_mutex);
     render_frame(lists);
     pthread_mutex_unlock(&render_mutex);
@@ -1404,7 +1410,7 @@ int native_target_read(uint64_t address, void *out, uint32_t left, uint32_t top,
     return 1;
 }
 
-static void render_frame(NativeList *lists) {
+static void replay_frame(NativeList *lists) {
     ++frame_number;
     if (__atomic_load_n(&pipeline_cache_dirty, __ATOMIC_RELAXED) && frame_number % 300 == 0) pipeline_cache_save();
     /* Wait until the GPU is done with this frame slot's previous use, then reuse it. */
@@ -1458,6 +1464,183 @@ static void render_frame(NativeList *lists) {
         last_textures = texture_count, last_targets = target_count, last_pipelines = pipeline_count;
         slow_upload_bytes = slow_alloc_ns = slow_copy_ns = 0;
     }
+}
+
+/* The frame before the one being replayed, kept for interpolation. */
+static NativeList *interp_previous;
+
+/* VW_INTERP_SHOT=<file>: when the file appears, the display image of the last frame pair blended
+ * at alpha 0, 1/4, 1/2, 3/4 and 1 (docs/dev/FRAME_INTERPOLATION.md, step 1). */
+static void interp_shots(NativeList *lists) {
+    const char *trigger = getenv("VW_INTERP_SHOT");
+    if (!trigger || !*trigger || !interp_previous) return;
+    FILE *f = fopen(trigger, "r");
+    if (!f) return;
+    fclose(f);
+    remove(trigger);
+    const uint64_t t0 = clock_ns();
+    InterpPlan plan = native_interp_plan(interp_previous, lists);
+    const double plan_ms = (double)(clock_ns() - t0) / 1e6;
+    for (int i = 0; i <= 4; ++i) {
+        const uint64_t t1 = clock_ns();
+        native_interp_apply(&plan, (float)i / 4);
+        const double apply_ms = (double)(clock_ns() - t1) / 1e6;
+        replay_frame(lists);
+        CHECK(vkWaitForFences(device, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+        printf("Interp: alpha %.2f (frame %" PRIu64 "): %u pairs, %u snapped, %u blocks blended%s; plan %.2f ms, "
+               "apply %.3f ms\n", (double)i / 4, frame_number, plan.stats.pairs, plan.stats.snapped,
+               plan.stats.blended, plan.stats.cut ? ", a cut" : "", plan_ms, apply_ms);
+        if (state.display) shot(state.display);
+    }
+    native_interp_apply(&plan, 1.0f);
+    native_interp_plan_free(&plan);
+}
+
+/* ---- Interpolation mode (VW_INTERP=1, docs/dev/FRAME_INTERPOLATION.md) ----
+ * The game's frames are not replayed when they arrive: render_frame keeps the newest one with
+ * its plan against the one before, and the present thread (video_out.cpp) asks for images with
+ * native_interp_next, which replays the newest frame blended at the time since it arrived. */
+int native_interp_active(void) { return vwgpu_frame_interpolation(); }
+/* Arrivals: the game thread only queues (interp_lock); the present thread plans and replays. */
+static pthread_mutex_t interp_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t interp_cond = PTHREAD_COND_INITIALIZER;
+typedef struct { NativeList *lists; uint64_t at; } InterpArrival;
+static InterpArrival interp_queue[8];
+static int interp_queued;
+static uint64_t interp_last_arrival, interp_period_ns = 16666667;
+/* The present thread's (render_mutex): the newest frame, its scan and its plan. */
+static NativeList *interp_current;
+static InterpFrame interp_current_scan;
+static InterpPlan interp_plan;
+static uint64_t interp_arrival_ns;
+static float interp_shown_alpha = 1.0f;
+static struct { uint64_t presents, replay_ns, plan_ns, blended, snapped, frames; double alpha; } interp_stats;
+
+static void free_lists(NativeList *lists) {
+    while (lists) { NativeList *next = lists->next; native_list_free(lists); lists = next; }
+}
+
+/* Game thread. */
+static void interp_accept(NativeList *lists) {
+    const uint64_t now = clock_ns();
+    pthread_mutex_lock(&interp_lock);
+    if (interp_last_arrival) {
+        const uint64_t d = now - interp_last_arrival;
+        if (d > 8000000 && d < 50000000) interp_period_ns = (interp_period_ns * 7 + d) / 8;
+    }
+    interp_last_arrival = now;
+    if (interp_queued == 8) { /* the present thread is stuck: drop the oldest */
+        free_lists(interp_queue[0].lists);
+        memmove(interp_queue, interp_queue + 1, 7 * sizeof(*interp_queue));
+        --interp_queued;
+    }
+    interp_queue[interp_queued++] = (InterpArrival){lists, now};
+    pthread_cond_broadcast(&interp_cond);
+    pthread_mutex_unlock(&interp_lock);
+}
+
+/* Present thread, render_mutex held: the arrived frames become current in order. */
+static void interp_advance(const InterpArrival *arrivals, int count) {
+    for (int i = 0; i < count; ++i) {
+        const uint64_t t0 = clock_ns();
+        InterpFrame scan = {0};
+        native_interp_plan_free(&interp_plan);
+        if (interp_current) interp_plan = native_interp_plan_from(&interp_current_scan, arrivals[i].lists, &scan);
+        else scan = interp_scan(arrivals[i].lists);
+        interp_stats.plan_ns += clock_ns() - t0;
+        interp_stats.blended += interp_plan.stats.blended, interp_stats.snapped += interp_plan.stats.snapped;
+        ++interp_stats.frames;
+        free(interp_current_scan.draws);
+        interp_current_scan = scan;
+        free_lists(interp_previous);
+        interp_previous = interp_current;
+        interp_current = arrivals[i].lists;
+        interp_arrival_ns = arrivals[i].at;
+    }
+}
+
+int native_interp_next(void **image, uint32_t *width, uint32_t *height, int wait_ms) {
+    struct timespec until;
+    clock_gettime(CLOCK_REALTIME, &until);
+    until.tv_nsec += (long)wait_ms * 1000000L;
+    until.tv_sec += until.tv_nsec / 1000000000L, until.tv_nsec %= 1000000000L;
+    InterpArrival arrivals[8];
+    if (!native_interp_active()) {
+        /* Off: drop what interpolation held (the normal path owns interp_previous again). */
+        pthread_mutex_lock(&interp_lock);
+        const int count = interp_queued;
+        memcpy(arrivals, interp_queue, (size_t)count * sizeof(*arrivals));
+        interp_queued = 0;
+        pthread_mutex_unlock(&interp_lock);
+        pthread_mutex_lock(&render_mutex);
+        for (int i = 0; i < count; ++i) free_lists(arrivals[i].lists);
+        free_lists(interp_current);
+        interp_current = NULL;
+        free(interp_current_scan.draws);
+        interp_current_scan = (InterpFrame){0};
+        native_interp_plan_free(&interp_plan);
+        interp_shown_alpha = 1.0f;
+        pthread_mutex_unlock(&render_mutex);
+        pthread_mutex_lock(&interp_lock);
+        pthread_cond_timedwait(&interp_cond, &interp_lock, &until);
+        pthread_mutex_unlock(&interp_lock);
+        return 0;
+    }
+    pthread_mutex_lock(&interp_lock);
+    /* Nothing new to show: no arrival, and the newest frame was shown at alpha 1. */
+    while (!interp_queued && (!interp_current || interp_shown_alpha >= 1.0f))
+        if (pthread_cond_timedwait(&interp_cond, &interp_lock, &until)) {
+            pthread_mutex_unlock(&interp_lock);
+            return 0;
+        }
+    const int count = interp_queued;
+    memcpy(arrivals, interp_queue, (size_t)count * sizeof(*arrivals));
+    interp_queued = 0;
+    const uint64_t period = interp_period_ns;
+    pthread_mutex_unlock(&interp_lock);
+
+    pthread_mutex_lock(&render_mutex);
+    interp_advance(arrivals, count);
+    const uint64_t start = clock_ns();
+    float alpha = interp_previous ? (float)(start - interp_arrival_ns) / (float)period : 1.0f;
+    alpha = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+    native_interp_apply(&interp_plan, alpha);
+    replay_frame(interp_current);
+    native_interp_apply(&interp_plan, 1.0f);
+    interp_shown_alpha = alpha;
+    /* VW_INTERP_TRACE=<n>: the first n presents after 30 s, one line each (pacing checks). */
+    static long trace = -1;
+    static uint64_t trace_start;
+    if (trace < 0) { const char *e = getenv("VW_INTERP_TRACE"); trace = e ? atol(e) : 0; trace_start = start; }
+    if (trace > 0 && start - trace_start > 30000000000ull) {
+        --trace;
+        printf("Interp trace: t %.2f ms, alpha %.3f, arrived %.2f ms ago, %d new\n", (start - trace_start) / 1e6,
+               (double)alpha, (start - interp_arrival_ns) / 1e6, count);
+    }
+    const int ok = state.display && present_last >= 0;
+    if (ok) {
+        *image = (void *)presents[present_last].image;
+        *width = presents[present_last].width;
+        *height = presents[present_last].height;
+    }
+    interp_stats.replay_ns += clock_ns() - start;
+    interp_stats.alpha += alpha;
+    if (++interp_stats.presents % 600 == 0) {
+        const double f = interp_stats.frames ? (double)interp_stats.frames : 1;
+        printf("Interp: 600 presents for %.0f game frames; replay %.2f ms per present, plan %.2f ms per frame, "
+               "%.0f blocks blended and %.0f snapped per frame, mean alpha %.2f, period %.2f ms\n",
+               (double)interp_stats.frames, interp_stats.replay_ns / 600e6, interp_stats.plan_ns / f / 1e6,
+               interp_stats.blended / f, interp_stats.snapped / f, interp_stats.alpha / 600, period / 1e6);
+        fflush(stdout);
+        memset(&interp_stats, 0, sizeof(interp_stats));
+    }
+    pthread_mutex_unlock(&render_mutex);
+    return ok;
+}
+
+static void render_frame(NativeList *lists) {
+    interp_shots(lists);
+    replay_frame(lists);
     const char *dir = getenv("VW_NATIVE_DUMP_DIR");
     if (report && dir && *dir && reports < 32) {
         char path[4096];
@@ -1500,7 +1683,9 @@ static void render_frame(NativeList *lists) {
         fflush(stdout);
         drawn_draws = skipped_draws = 0;
     }
-    while (lists) { NativeList *next = lists->next; native_list_free(lists); lists = next; }
+    NativeList *drop = interp_previous;
+    interp_previous = lists;
+    while (drop) { NativeList *next = drop->next; native_list_free(drop); drop = next; }
 }
 
 static int render_init(uint32_t family);
