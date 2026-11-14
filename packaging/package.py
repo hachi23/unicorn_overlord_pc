@@ -19,6 +19,7 @@ No game file is included: the start program asks for the folder of the user's ow
 """
 import ast
 import hashlib
+import importlib.util
 import os
 import re
 from pathlib import Path
@@ -108,14 +109,12 @@ def freeze(python, key, game, binaries):
     return OUT / 'pyi-dist' / game['title']  # the folder: the program and _internal/
 
 
-def collect_binaries():
-    """out/pyi-bin: vwport, stripped (Windows: with the CLANG64 DLLs it still loads, if any)."""
-    folder = OUT / 'pyi-bin'
-    if folder.exists():
-        shutil.rmtree(folder)
-    folder.mkdir(parents=True)
+def add_executable(built, folder, symbols):
+    """Copies vwport (Windows: with the CLANG64 DLLs it still loads, if any) from a build's out/
+    into folder, stripped, its debug symbols kept in symbols/."""
+    folder.mkdir(parents=True, exist_ok=True)
     if WINDOWS:
-        probe = OUT / 'vwport.exe'
+        probe = built / 'vwport.exe'
         shutil.copy2(probe, folder)
         # ldd lists DLLs with their MSYS2 paths; system DLLs are not copied.
         listing = subprocess.run(['ldd', str(probe)], capture_output=True, text=True, check=True).stdout
@@ -126,10 +125,9 @@ def collect_binaries():
                 shutil.copy2(subprocess.run(['cygpath', '-w', dll], capture_output=True, text=True,
                                             check=True).stdout.strip(), folder)
     else:
-        shutil.copy2(OUT / 'static' / 'vwport', folder)
+        shutil.copy2(built / 'static' / 'vwport', folder)
     binary = folder / ('vwport.exe' if WINDOWS else 'vwport')
-    symbols = OUT / 'symbols'
-    symbols.mkdir(exist_ok=True)
+    symbols.mkdir(parents=True, exist_ok=True)
     objcopy = shutil.which('objcopy') or shutil.which('llvm-objcopy')
     strip = shutil.which('strip') or shutil.which('llvm-strip')
     if not objcopy or not strip:
@@ -137,17 +135,40 @@ def collect_binaries():
     run(objcopy, '--only-keep-debug', binary, symbols / 'vwport.debug')
     run(strip, '--strip-unneeded', binary)
     run(objcopy, f'--add-gnu-debuglink={symbols / "vwport.debug"}', binary)
+
+
+def collect_binaries():
+    """out/pyi-bin: vwport (native renderer) and, when VW_SHADPS4_OUT names the out/ folder of a
+    shadps4-edition build, that vwport in shadps4/ (run.py starts the one vw.ini's renderer= names)."""
+    folder = OUT / 'pyi-bin'
+    if folder.exists():
+        shutil.rmtree(folder)
+    symbols = OUT / 'symbols'
+    if symbols.exists():
+        shutil.rmtree(symbols)
+    add_executable(OUT, folder, symbols)
+    shadps4 = os.environ.get('VW_SHADPS4_OUT')
+    if shadps4:
+        add_executable(Path(shadps4), folder / 'shadps4', symbols / 'shadps4')
     return folder
 
 
-def source_archive(destination):
-    """Only tracked port/submodule code and build-downloaded sources, never game data."""
+def shadps4_root():
+    """The shadps4-edition checkout whose build VW_SHADPS4_OUT names (its out/), or None."""
+    out = os.environ.get('VW_SHADPS4_OUT')
+    return Path(out).resolve().parent if out else None
+
+
+def source_archive(destination, root=None):
+    """Only tracked port/submodule code and build-downloaded sources, never game data. root: another
+    checkout (the shadPS4 edition's), else this one."""
+    root = root or ROOT
     with tarfile.open(destination, 'w:gz') as archive:
-        repos = [ROOT]
-        listing = subprocess.check_output(['git', 'submodule', 'status', '--recursive'], cwd=ROOT, text=True)
-        repos += [ROOT / line.split()[1] for line in listing.splitlines()]
+        repos = [root]
+        listing = subprocess.check_output(['git', 'submodule', 'status', '--recursive'], cwd=root, text=True)
+        repos += [root / line.split()[1] for line in listing.splitlines()]
         for repo in repos:
-            prefix = 'source/' if repo == ROOT else f'source/{repo.relative_to(ROOT)}/'
+            prefix = 'source/' if repo == root else f'source/{repo.relative_to(root)}/'
             with subprocess.Popen(['git', 'archive', '--format=tar', f'--prefix={prefix}', 'HEAD'],
                                   cwd=repo, stdout=subprocess.PIPE) as process:
                 with tarfile.open(fileobj=process.stdout, mode='r|') as source:
@@ -155,12 +176,12 @@ def source_archive(destination):
                         archive.addfile(member, source.extractfile(member) if member.isfile() else None)
                 if process.wait():
                     raise RuntimeError(f'Cannot archive {repo}')
-        recipe = ROOT / 'packaging/deps.sh'
+        recipe = root / 'packaging/deps.sh'
         manifest = recipe.read_text() if recipe.is_file() else ''
         for name, version, url, checksum in re.findall(
                 r'^"([\w]+) (\S+) (https://\S+) ([a-f0-9]{64})"$', manifest, re.MULTILINE):
             extension = url.rsplit('.tar.', 1)[-1]
-            path = OUT / 'deps/src' / f'{name}-{version}.tar.{extension}'
+            path = root / 'out/deps/src' / f'{name}-{version}.tar.{extension}'
             if not path.is_file():
                 if name == 'nasm':  # build tool may come from the system
                     continue
@@ -174,7 +195,7 @@ def source_archive(destination):
             archive.add(path, arcname=f'dependency-sources/{path.name}')
         # Only the four known CI clones, and only their committed files. Never sweep src-*.
         for name in ('Vulkan-Headers', 'glslang', 'VulkanMemoryAllocator', 'robin-map'):
-            path = ROOT / f'src-{name}'
+            path = root / f'src-{name}'
             if not (path / '.git').exists():
                 continue
             with subprocess.Popen(['git', 'archive', '--format=tar', f'--prefix=header-sources/{name}/', 'HEAD'],
@@ -206,6 +227,19 @@ def main():
     shutil.copytree(launcher, dist, dirs_exist_ok=True)
     shutil.copy2(ROOT / 'LICENSE', dist)
     notices.collect(dist / 'licenses', python)
+    edition = shadps4_root()
+    if edition:
+        # The shadPS4 renderer's game executable (bin/shadps4/): its own notices and source.
+        spec = importlib.util.spec_from_file_location('shadps4_notices', edition / 'packaging/notices.py')
+        edition_notices = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(edition_notices)
+        edition_notices.collect_native(dist / 'licenses' / 'shadps4', root=edition)
+        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=edition, text=True).strip()
+        (dist / 'licenses' / 'shadps4' / 'SOURCE.txt').write_text(
+            'The shadPS4 renderer (_internal/runtime/bin/shadps4/) is built from branch shadps4-edition,\n'
+            f'revision {commit}:\nhttps://github.com/hachi23/unicorn_overlord_pc/tree/{commit}\n'
+            'Its source archive (with the shadPS4 video core and the other submodules) is attached\n'
+            'to the release as unicorn-shadps4-source-<revision>.tar.gz.\n', encoding='utf-8')
     (dist / 'README.txt').write_text(
         f'{game["title"]} experimental PC port\nNo game files included.\n'
         'Keep this folder together (the program, _internal/, LICENSE and licenses/). Settings,\n'
@@ -220,6 +254,10 @@ def main():
         symbols.add(OUT / 'symbols', arcname=f'symbols-{revision}')
     if not WINDOWS:
         source_archive(dist.parent / f'{key}-source-{revision}.tar.gz')
+        if edition:
+            edition_revision = subprocess.check_output(['git', 'rev-parse', '--short=12', 'HEAD'], cwd=edition,
+                                                       text=True).strip()
+            source_archive(dist.parent / f'{key}-shadps4-source-{edition_revision}.tar.gz', root=edition)
     archive = dist.parent / (name.replace(' ', '-') + ('-windows.zip' if WINDOWS else '-linux.tar.gz'))
     if WINDOWS:
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:

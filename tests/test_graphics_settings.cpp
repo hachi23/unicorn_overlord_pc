@@ -57,7 +57,8 @@ int main() {
     const char* path = "graphics-settings-test.ini";
     {
         std::ofstream out(path);
-        // fps_limit, renderer and the readback/shader/queue keys of the old renderer are gone.
+        // renderer= picks the game executable; the shadPS4 renderer's own keys (async_shaders,
+        // deferred_readback, ...) are kept unchanged for it.
         out << "display_mode=borderless\nvsync=0\nfps_limit=240\nasync_shaders=0\nrenderer=shadps4\n"
                "render_resolution=1800p\naspect_ratio=21:9\ndeferred_readback=0\nstale_readback=1\n"
                "fsr1=1\nanime4k=1\nrcas=0\nrcas_strength=40\nframes_queued=2\ntext_language=simplified_chinese\n";
@@ -70,7 +71,10 @@ int main() {
     assert(v.render_resolution == 3 && v.aspect_ratio == 1);
     assert(v.fsr1 && !v.rcas && v.rcas_strength == 40);
     assert(v.anime4k == G::Anime4kFast);
-    assert(v.text_language == 3 && !VwSettings::GraphicsNeedRestart());
+    assert(v.text_language == 3 && v.renderer == 1 && !VwSettings::GraphicsNeedRestart());
+    v.renderer = 0;  // run.py starts the other game executable: a restart
+    assert(VwSettings::GraphicsNeedRestart());
+    v.renderer = 1;
     v.text_language = 1;  // applied by the probe at start
     assert(VwSettings::GraphicsNeedRestart());
     v.text_language = 3;
@@ -87,13 +91,12 @@ int main() {
     const std::string saved = Read(path);
     for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "render_resolution=1800p\n",
                              "aspect_ratio=21:9\n", "fsr1=1\n", "anime4k=1\n", "rcas=0\n", "rcas_strength=40\n",
-                             "text_language=simplified_chinese\n"}) {
+                             "text_language=simplified_chinese\n", "renderer=shadps4\n", "async_shaders=0\n",
+                             "deferred_readback=0\n", "stale_readback=1\n", "frames_queued=2\n"}) {
         assert(saved.find(line) != std::string::npos);
     }
-    for (const char* gone : {"fps_limit", "async_shaders", "renderer", "deferred_readback", "stale_readback",
-                             "frames_queued"}) {
-        assert(saved.find(gone) == std::string::npos);
-    }
+    assert(saved.find("renderer=", saved.find("renderer=") + 1) == std::string::npos);  // once
+    assert(saved.find("fps_limit") == std::string::npos);  // removed: the game runs at its own 60
 
     {
         std::ofstream out(path);

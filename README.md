@@ -5,9 +5,10 @@
 
 A native Linux and Windows port of the PlayStation 4 version of **Unicorn Overlord**.
 
-> **No longer developed.** v1.6.0 is the last release. If its experimental renderer gives you
-> trouble, use the shadPS4 edition in the same release (`Unicorn-Overlord-shadPS4-...`) or any
-> older build from the [releases page](https://github.com/hachi23/unicorn_overlord_pc/releases).
+> **No longer developed.** If the experimental native renderer gives you trouble, switch to the
+> shadPS4 renderer in the game: **Insert** (or R3+L2) > **Performance** > **Renderer** >
+> **shadPS4**, then **Apply and restart** ([details](#switching-the-renderer)). Older builds are
+> on the [releases page](https://github.com/hachi23/unicorn_overlord_pc/releases).
 > The source is GPL-2.0-or-later: you are welcome to fork it and change it however you like.
 
 | Dump | State |
@@ -44,36 +45,37 @@ Only the dump listed above is supported.
 
 ## Download
 
-Download [v1.6.0, the last release](https://github.com/hachi23/unicorn_overlord_pc/releases/latest).
-It has two builds of the same port, with the same features. Only the graphics differ:
+Download [the latest release](https://github.com/hachi23/unicorn_overlord_pc/releases/latest):
+`Unicorn-Overlord-x86_64.AppImage` (Linux) or `Unicorn-Overlord-PC-windows.zip` (Windows).
+It has both renderers, and you can [switch between them](#switching-the-renderer) in the game:
 
-| Build | Graphics | Linux | Windows |
-|---|---|---|---|
-| Main | The port's own renderer ([experimental](#renderer-experimental)) | `Unicorn-Overlord-x86_64.AppImage` | `Unicorn-Overlord-PC-windows.zip` |
-| shadPS4 edition | shadPS4, as up to v1.5.2 | `Unicorn-Overlord-shadPS4-x86_64.AppImage` | `Unicorn-Overlord-shadPS4-PC-windows.zip` |
+| Renderer | What it is |
+|---|---|
+| Native (default) | The port's own renderer ([experimental](#renderer-experimental)), faster |
+| shadPS4 | The emulated PS4 GPU of v1.5.2 and earlier, slower but longer tested |
 
-Start with the main build. If its renderer gives you trouble, use the shadPS4 edition. Its
-source is the [`shadps4-edition`](https://github.com/hachi23/unicorn_overlord_pc/tree/shadps4-edition)
-branch.
+The shadPS4 renderer is built from the
+[`shadps4-edition`](https://github.com/hachi23/unicorn_overlord_pc/tree/shadps4-edition) branch.
+v1.6.0 also had separate shadPS4-edition downloads (`Unicorn-Overlord-shadPS4-...`); they are no
+longer needed.
 
 - **Linux:** make the `.AppImage` executable (`chmod +x`) and run it. It keeps its `data/`
   folder next to the `.AppImage`.
 - **Windows:** extract the zip into its own folder and run the `.exe` in it. It keeps `data/`
   beside itself. Keep `LICENSE` and `licenses/` with it.
 
-Each build updates only to its own kind. The two can sit side by side in separate folders. The
-release also has checksums, the source and matching debug symbols. See
+The release also has checksums, the source and matching debug symbols. See
 [docs/RELEASING.md](docs/RELEASING.md) for how builds and releases are made.
 
 ## Requirements
 
 - 64-bit Linux, or Windows 10 (1903+) / 11.
 - A Vulkan 1.3 GPU.
-  - **Main build:** it needs buffer device addresses, descriptor indexing, 64-bit shader
+  - **Native renderer:** it needs buffer device addresses, descriptor indexing, 64-bit shader
     integers, subgroup ballot/vote and push descriptors (AMD, NVIDIA and Intel GPUs of the last
     years with a current driver). If one is missing, the game stops at start and the log names
     it (`Native: <GPU> has no ...`).
-  - **shadPS4 edition:** it needs sparse buffers (`sparseBinding`, `sparseResidencyBuffer`). AMD
+  - **shadPS4 renderer:** it needs sparse buffers (`sparseBinding`, `sparseResidencyBuffer`). AMD
     and NVIDIA have them. On Linux, Intel integrated graphics older than Gen12 (UHD 620 and
     similar) lack them.
 - Your own dump of the game with the 1.04 update merged in (or the Hong Kong 1.05 package), as a folder containing `eboot.bin`,
@@ -166,8 +168,8 @@ template and attach:
 
 ### Renderer (experimental)
 
-Since v1.6.0 the main build draws with its own renderer instead of the shadPS4 GPU emulation it
-used before. The shadPS4 edition keeps shadPS4. The game's calls into its graphics library are recorded and drawn directly with Vulkan;
+Since v1.6.0 the port draws with its own renderer by default instead of the shadPS4 GPU emulation
+it used before. The game's calls into its graphics library are recorded and drawn directly with Vulkan;
 the PS4 command buffers are no longer decoded. It is faster, most of all on weak GPUs: on an
 RX 560X the New Game opening holds 60 FPS where v1.5.2 dropped to 36-54, and on a Vega 8
 integrated GPU it runs 46-60 FPS where v1.5.2 ran 38-59.
@@ -182,10 +184,21 @@ patches. The menu shows **Renderer: Native (experimental)** under About.
 chapter 1 (story scenes, the battle map, menus, saving and loading, the English patch, French
 from the Switch text, 21:9 and 32:9, the Hong Kong 1.05 package) on AMD GPUs on Linux. Windows,
 NVIDIA and Intel GPUs, the Steam Deck and later chapters have not been checked by the developer.
-The port is no longer developed. If something is missing or looks wrong, use the
-[shadPS4 edition](#download) or an older release instead. For anyone forking the port: the log lines
+The port is no longer developed. If something is missing or looks wrong,
+[switch to the shadPS4 renderer](#switching-the-renderer). For anyone forking the port: the log lines
 that start with `Native:` and [docs/dev/NATIVE_RENDERER.md](docs/dev/NATIVE_RENDERER.md) are the
 place to start.
+
+### Switching the renderer
+
+In the game, press **Insert** (or R3+L2 on a controller), open **Performance**, set
+**Renderer** to **shadPS4** or **Native (experimental)**, and choose **Apply and restart**. The game
+closes and starts again with the other renderer. Progress since your last save is lost. Your
+saves and settings are shared by both renderers.
+
+If the game does not start with the new renderer, the next start goes back to the previous one
+by itself. To choose the renderer before the game starts, set `renderer=shadps4` or
+`renderer=native` in `data/vw.ini`. The log says which one ran (`Renderer: ...`).
 
 ### Other languages (experimental)
 

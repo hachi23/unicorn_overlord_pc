@@ -13,7 +13,10 @@ from pathlib import Path
 
 RESOLUTIONS = ('native', '720p', '900p', '1800p', '4K')
 ASPECT_RATIOS = ('16:9', '21:9', '32:9')
-DEFAULTS = {'render_resolution': 'native', 'aspect_ratio': '16:9'}
+# native: the port's own renderer (bin/vwport); shadps4: the shadPS4 edition's game executable,
+# packaged beside it in bin/shadps4/ (run.py picks the one to start).
+RENDERERS = ('native', 'shadps4')
+DEFAULTS = {'render_resolution': 'native', 'aspect_ratio': '16:9', 'renderer': 'native'}
 
 
 def read_ini(path):
@@ -55,6 +58,8 @@ def startup_options(ini):
         options['render_resolution'] = 'native'
     if options['aspect_ratio'] not in ASPECT_RATIOS:
         options['aspect_ratio'] = '16:9'
+    if options['renderer'] not in RENDERERS:
+        options['renderer'] = 'native'
     return options
 
 

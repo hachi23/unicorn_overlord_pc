@@ -1,4 +1,6 @@
-# Builds the release packages for every pull request and every merge to main:
+# Builds the release packages for every pull request and every merge to main. Each carries two
+# game executables: the native renderer's (this branch) and, in bin/shadps4/, the shadPS4
+# renderer's (branch SHADPS4_REF, built beside it); vw.ini renderer= picks one (run.py).
 #   Linux:   Unicorn-Overlord-x86_64.AppImage (built on Ubuntu 22.04: runs on glibc 2.35 and newer)
 #   Windows: Unicorn-Overlord-PC-windows.zip (MSYS2 CLANG64; the program, _internal/, licenses)
 # On main, the "latest" pre-release is replaced with the new files (notes: the pull requests merged
@@ -28,6 +30,11 @@ env:
   # Pinned to the versions the port is developed with.
   VULKAN_HEADERS: v1.4.357
   GLSLANG: 16.0.0
+  # The shadPS4 renderer: its branch and the header libraries only it needs.
+  SHADPS4_REF: shadps4-edition
+  VMA: v3.4.0
+  ROBIN_MAP: v1.4.0
+  BOOST: 1.86.0  # headers only; Ubuntu's 1.74 small_vector does not convert to std::span
 
 jobs:
   linux:
@@ -58,9 +65,9 @@ jobs:
           path: |
             ~/prefix
             out/deps
-          key: linux-${{ env.VULKAN_HEADERS }}-${{ env.GLSLANG }}-${{ hashFiles('packaging/deps.sh') }}
+          key: linux-${{ env.BOOST }}-${{ env.VULKAN_HEADERS }}-${{ env.GLSLANG }}-${{ env.VMA }}-${{ env.ROBIN_MAP }}-${{ hashFiles('packaging/deps.sh') }}
 
-      - name: Vulkan headers, glslang
+      - name: Vulkan headers, glslang, VMA, robin-map, Boost
         run: |
           prefix=$HOME/prefix
           if [ ! -f "$prefix/.done" ]; then
@@ -72,11 +79,35 @@ jobs:
             }
             build KhronosGroup/Vulkan-Headers "$VULKAN_HEADERS"
             build KhronosGroup/glslang "$GLSLANG" -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF
+            build GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator "$VMA"
+            build Tessil/robin-map "$ROBIN_MAP"
+            curl -fsSL "https://archives.boost.io/release/$BOOST/source/boost_${BOOST//./_}.tar.gz" | \
+              tar -xz -C "$prefix/include" --strip-components=1 "boost_${BOOST//./_}/boost"
             touch "$prefix/.done"
           fi
           echo "$prefix/bin" >> "$GITHUB_PATH"
           echo "CMAKE_PREFIX_PATH=$prefix" >> "$GITHUB_ENV"
           echo "CPATH=$prefix/include" >> "$GITHUB_ENV"
+
+      - name: Check out the shadPS4 renderer
+        run: |
+          git fetch -q origin "$SHADPS4_REF"
+          git worktree add shadps4-edition FETCH_HEAD
+          git -C shadps4-edition submodule update --init --recursive
+          echo "shadPS4 renderer: $SHADPS4_REF at $(git -C shadps4-edition rev-parse HEAD)"
+
+      - name: Cache the shadPS4 renderer's static dependencies
+        uses: actions/cache@v6
+        with:
+          path: shadps4-edition/out/deps
+          key: linux-shadps4-${{ hashFiles('shadps4-edition/packaging/deps.sh') }}
+
+      - name: Build the shadPS4 renderer
+        working-directory: shadps4-edition
+        run: |
+          bash packaging/deps.sh
+          export PKG_CONFIG_PATH=$PWD/out/deps/prefix/lib/pkgconfig:$PWD/out/deps/prefix/share/pkgconfig
+          bash build.sh --static
 
       - name: Package
         run: |
@@ -84,7 +115,8 @@ jobs:
           # build the static ones first (Ubuntu 22.04 has no SDL3 package).
           bash packaging/deps.sh
           export PKG_CONFIG_PATH=$PWD/out/deps/prefix/lib/pkgconfig:$PWD/out/deps/prefix/share/pkgconfig
-          VW_VERSION=$(git describe --always --tags --match 'v[0-9]*') python3 packaging/package.py "$GAME"
+          VW_SHADPS4_OUT=$PWD/shadps4-edition/out \
+            VW_VERSION=$(git describe --always --tags --match 'v[0-9]*') python3 packaging/package.py "$GAME"
           bash packaging/linux/appimage.sh "$TITLE"
 
       - name: Tests
@@ -137,8 +169,34 @@ jobs:
           path: out/deps
           key: windows-${{ hashFiles('packaging/deps.sh') }}
 
+      - name: Check out the shadPS4 renderer
+        run: |
+          git fetch -q origin "$SHADPS4_REF"
+          git worktree add shadps4-edition FETCH_HEAD
+          git -C shadps4-edition submodule update --init --recursive
+          echo "shadPS4 renderer: $SHADPS4_REF at $(git -C shadps4-edition rev-parse HEAD)"
+
+      - name: Cache the shadPS4 renderer's static dependencies
+        uses: actions/cache@v6
+        with:
+          path: shadps4-edition/out/deps
+          key: windows-shadps4-${{ hashFiles('shadps4-edition/packaging/deps.sh') }}
+
+      - name: Build the shadPS4 renderer
+        working-directory: shadps4-edition
+        run: |
+          # The packages of its packaging/windows/build.sh; its build.sh then builds out/vwport.exe.
+          pacman -S --needed --noconfirm git patch make tar xz \
+            mingw-w64-clang-x86_64-{toolchain,cmake,ninja,pkgconf,python,nasm} \
+            mingw-w64-clang-x86_64-{vulkan-headers,vulkan-loader,vulkan-memory-allocator,glslang} \
+            mingw-w64-clang-x86_64-{sdl3,fmt,boost,robin-map,xxhash,ffmpeg,zydis} \
+            mingw-w64-clang-x86_64-{spirv-tools,spirv-headers,spirv-cross}
+          bash build.sh --static
+
       - name: Build and package
-        run: VW_VERSION=$(git describe --always --tags --match 'v[0-9]*') bash packaging/windows/build.sh "$GAME"
+        run: |
+          VW_SHADPS4_OUT=$(cygpath -w "$PWD/shadps4-edition/out") \
+            VW_VERSION=$(git describe --always --tags --match 'v[0-9]*') bash packaging/windows/build.sh "$GAME"
 
       - name: Native and Python tests
         run: |

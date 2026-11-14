@@ -21,3 +21,4 @@ run_uo/
 # Game dumps and packages (never commit; see CONTRIBUTING.md)
 *.pkg
 /CUSA*/
+shadps4-edition/
