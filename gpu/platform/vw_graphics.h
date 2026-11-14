@@ -28,15 +28,24 @@ struct Size {
     int w, h;
 };
 
-/// First size of the window in Windowed mode: the game's image at the render resolution and
-/// aspect ratio (at most 1080 tall), shrunk to fit the display's usable area so that no side
-/// falls off the screen (issue #70: a 1920x1080 window on a 1280x1024 monitor).
-inline Size WindowedSize(int resolution, int aspect_w, int aspect_h, int usable_w, int usable_h) {
-    const int height = resolution >= 0 && resolution < int(ResolutionHeights.size())
-                           ? ResolutionHeights[resolution] : 1080;
-    Size s{0, height < 1080 ? height : 1080};
-    s.w = s.h * aspect_w / aspect_h;
-    if (usable_w > 0 && usable_h > 0 && (s.w > usable_w || s.h > usable_h)) {
+/// Window sizes in Windowed mode (vw.ini window_size), apart from the render resolution: "auto"
+/// is the largest window the screen has room for. Index 0 is the default.
+inline constexpr std::array<std::string_view, 6> WindowSizes = {"auto", "720p", "900p", "1080p", "1440p", "4K"};
+inline constexpr std::array<const char*, 6> WindowSizeNames = {"Fit screen", "720p", "900p",
+                                                               "1080p", "1440p", "4K"};
+/// Height of each entry of WindowSizes; 0: fit the screen.
+inline constexpr std::array<int, 6> WindowSizeHeights = {0, 720, 900, 1080, 1440, 2160};
+
+/// Size of the window in Windowed mode: WindowSizes[window_size] at the aspect ratio, shrunk to
+/// fit the display's usable area so that no side falls off the screen (issue #70: a 1920x1080
+/// window on a 1280x1024 monitor). "auto" fills that area; without one it is 1080p.
+inline Size WindowedSize(int window_size, int aspect_w, int aspect_h, int usable_w, int usable_h) {
+    const bool usable = usable_w > 0 && usable_h > 0;
+    int height = window_size > 0 && window_size < int(WindowSizeHeights.size())
+                     ? WindowSizeHeights[window_size] : 0;
+    if (height == 0) height = usable ? usable_h : 1080;
+    Size s{height * aspect_w / aspect_h, height};
+    if (usable && (s.w > usable_w || s.h > usable_h)) {
         if (s.w * usable_h > usable_w * s.h) {  // width is the tighter side
             s.h = s.h * usable_w / s.w;
             s.w = usable_w;
@@ -73,6 +82,10 @@ constexpr int IndexOf(const std::array<T, N>& values, const T& value, int fallba
 
 inline int ParseDisplayMode(std::string_view text) {
     return IndexOf(DisplayModeKeys, text, Windowed);
+}
+/// Index into WindowSizes; unknown text is "auto".
+inline int ParseWindowSize(std::string_view text) {
+    return IndexOf(WindowSizes, text, 0);
 }
 /// Index into Resolutions; unknown text is native.
 inline int ParseResolution(std::string_view text) {

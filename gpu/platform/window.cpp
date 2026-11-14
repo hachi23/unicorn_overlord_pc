@@ -13,22 +13,29 @@
 
 namespace Frontend {
 
+// The Window size setting on this display at the game's aspect ratio, fitted to the display's
+// usable area with a margin for the title bar and frame.
+static VwGraphics::Size WindowedSizeFor(SDL_DisplayID display, int window_size) {
+    static constexpr int aspects[][2] = {{16, 9}, {64, 27}, {32, 9}};
+    const VwSettings::Values& s = VwSettings::Get();
+    const int a = s.startup_aspect_ratio >= 0 && s.startup_aspect_ratio < 3 ? s.startup_aspect_ratio : 0;
+    SDL_Rect usable{};
+    if (!display || !SDL_GetDisplayUsableBounds(display, &usable)) usable = {};
+    return VwGraphics::WindowedSize(window_size, aspects[a][0], aspects[a][1], usable.w * 95 / 100,
+                                    usable.h * 90 / 100);
+}
+
 WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}, height{height_} {
     // Gamepads are sampled by runtime_pad.c; their events are pumped here with the window's.
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "STOP: no SDL video (%s)\n", SDL_GetError());
         std::_Exit(1);
     }
-    // vw: the windowed size follows the render resolution and fits the screen (left a margin for
-    // the title bar and frame); Borderless and Fullscreen return to it when switched to Windowed.
+    // vw: the windowed size is the Window size setting (WindowedSizeFor), not the render
+    // resolution; Borderless and Fullscreen return to it when switched to Windowed.
+    window_size = VwSettings::Get().window_size;
     {
-        static constexpr int aspects[][2] = {{16, 9}, {64, 27}, {32, 9}};
-        const VwSettings::Values& s = VwSettings::Get();
-        const int a = s.startup_aspect_ratio >= 0 && s.startup_aspect_ratio < 3 ? s.startup_aspect_ratio : 0;
-        SDL_Rect usable{};
-        if (!SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable)) usable = {};
-        const VwGraphics::Size size = VwGraphics::WindowedSize(
-            s.startup_render_resolution, aspects[a][0], aspects[a][1], usable.w * 95 / 100, usable.h * 90 / 100);
+        const VwGraphics::Size size = WindowedSizeFor(SDL_GetPrimaryDisplay(), window_size);
         width_ = size.w;
         height_ = size.h;
     }
@@ -138,6 +145,18 @@ bool WindowSDL::PollEvents() {
     }
     if (const int mode = VwSettings::Get().display_mode; mode != display_mode) {
         ApplyDisplayMode(mode);
+    }
+    // A new Window size: the window takes it now in Windowed mode (else when it returns to it).
+    if (const int size = VwSettings::Get().window_size; size != window_size) {
+        window_size = size;
+        if (display_mode == VwGraphics::Windowed) {
+            const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+            const VwGraphics::Size s = WindowedSizeFor(display, size);
+            SDL_SetWindowSize(window, s.w, s.h);
+            SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED_DISPLAY(display),
+                                  SDL_WINDOWPOS_CENTERED_DISPLAY(display));
+            std::printf("Window: size %s, %dx%d\n", VwGraphics::WindowSizes[size].data(), s.w, s.h);
+        }
     }
     // On the battle map the game's cursor is the pointer: hide the system one over the window.
     const bool hide = NowNs() - mouse_map_ns.load(std::memory_order_relaxed) < 300'000'000 && !VwOverlay::CapturesInput();

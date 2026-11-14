@@ -278,6 +278,11 @@ void ImageTab() {
     if (BeginRows("##display")) {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
                   "Windowed, borderless window or exclusive fullscreen.");
+        ImGui::BeginDisabled(s.display_mode != G::Windowed);
+        ChoiceRow("Window size", s.window_size, G::WindowSizeNames.data(), nullptr, int(G::WindowSizes.size()),
+                  "The window's size in Windowed mode. Fit screen is the largest that fits your screen; a "
+                  "larger size is shrunk to fit. The window can also be resized by dragging its edge.");
+        ImGui::EndDisabled();
         CheckRow("VSync", s.vsync, "Waits for the monitor: no tearing, a little more input delay.");
         CheckRow("Frame interpolation", s.frame_interpolation,
                  "Shows frames blended between the game's 60, as many as the display and GPU allow. "

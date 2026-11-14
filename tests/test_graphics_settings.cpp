@@ -37,13 +37,16 @@ int main() {
     assert(G::FsrPassRuns(true, false, 1280, 720, 2560, 1440) && !G::FsrPassRuns(false, false, 1280, 720, 2560, 1440));
     assert(G::FsrPassRuns(false, true, 1920, 1080, 1920, 1080) && !G::FsrPassRuns(true, false, 1920, 1080, 1920, 1080));
     assert(!G::FsrPassRuns(true, true, 2560, 1440, 1920, 1080));  // larger image: regular scaling
-    // Windowed: the render size up to 1080 tall, shrunk to the usable area (issue #70).
+    // Windowed: the Window size, shrunk to the usable area (issue #70); "auto" fills it.
     {
-        const G::Size a = G::WindowedSize(1, 16, 9, 2560, 1400), b = G::WindowedSize(4, 16, 9, 3840, 2100);
-        const G::Size c = G::WindowedSize(0, 16, 9, 1280, 984), d = G::WindowedSize(0, 64, 27, 1920, 1040);
-        const G::Size e = G::WindowedSize(0, 16, 9, 0, 0);
-        assert(a.w == 1280 && a.h == 720 && b.w == 1920 && b.h == 1080);
+        const G::Size a = G::WindowedSize(1, 16, 9, 2560, 1400), b = G::WindowedSize(5, 16, 9, 3840, 2100);
+        const G::Size c = G::WindowedSize(3, 16, 9, 1280, 984), d = G::WindowedSize(3, 64, 27, 1920, 1040);
+        const G::Size e = G::WindowedSize(0, 16, 9, 0, 0), f = G::WindowedSize(0, 16, 9, 1824, 936);
+        const G::Size g = G::WindowedSize(0, 16, 9, 2432, 1305), h = G::WindowedSize(4, 16, 9, 1824, 936);
+        assert(a.w == 1280 && a.h == 720 && b.w == 3733 && b.h == 2100);
         assert(c.w == 1280 && c.h == 720 && d.w == 1920 && d.h == 810 && e.w == 1920 && e.h == 1080);
+        assert(f.w == 1664 && f.h == 936 && g.w == 2320 && g.h == 1305 && h.w == 1664 && h.h == 936);
+        assert(G::ParseWindowSize("1440p") == 4 && G::ParseWindowSize("auto") == 0 && G::ParseWindowSize("8K") == 0);
     }
     assert(G::ParseAnime4k(2) == G::Anime4kQuality && G::ParseAnime4k(3) == G::Anime4kOff && G::ParseAnime4k(-1) == 0);
     // Anime4K's x2 runs above 1.2 times both ways: 1080p to 1440p, not 1080p to 1200p or 1080p.
