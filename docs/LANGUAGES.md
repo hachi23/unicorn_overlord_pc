@@ -134,8 +134,12 @@ Simplified Chinese shows Chinese.
 Yes, with a fan translation mod. See [LANGUAGE_MODS.md](LANGUAGE_MODS.md).
 
 **Can I bring my Switch save over?**
-Not yet. The Switch save is laid out differently, and a converter needs a real Switch save to
-check against (issue #71).
+Yes. Copy the save folder off the Switch with a save manager such as JKSV; it holds
+`UCSAVEFILE00_AUTOSAVE.DAT`, `UCSAVEFILE01.DAT` and so on. Start the port once and reach the
+title screen, then close it and drag that folder onto the program (or run it with
+`--import-switch-save`). Each Switch save goes into the slot with the same number and replaces
+it, and the Switch autosave goes to Auto. Your saves are backed up first, in
+`data/user/savedata_backups`. A save made in the middle of a battle restarts that battle.
 
 **Something looks wrong.**
 Please report it with the **Translation report** issue template, with a screenshot and the log
