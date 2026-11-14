@@ -72,8 +72,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.display_mode = VwGraphics::ParseDisplayMode(value);
     } else if (key == "vsync") {
         v.vsync = i != 0;
-    } else if (key == "frame_interpolation") {
-        v.frame_interpolation = i != 0;
     } else if (key == "fsr1") {
         v.fsr1 = i != 0;
     } else if (key == "anime4k") {
@@ -133,7 +131,6 @@ void Load() {
     const std::pair<const char*, const char*> env_keys[] = {
         {"VW_FSR1", "fsr1"}, {"VW_ANIME4K", "anime4k"}, {"VW_RCAS", "rcas"},
         {"VW_STICK_DEAD_ZONE", "stick_dead_zone"}, {"VW_VSYNC", "vsync"},
-        {"VW_INTERP", "frame_interpolation"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -174,12 +171,12 @@ void Save() {
                  int(v.overlay_items >> 6 & 1), v.overlay_scale.load(), v.overlay_corner.load(),
                  v.overlay_opacity.load(), v.overlay_layout.load(), v.menu_tab.load());
     std::fprintf(file,
-                 "display_mode=%s\nvsync=%d\nframe_interpolation=%d\n"
+                 "display_mode=%s\nvsync=%d\n"
                  "fsr1=%d\nanime4k=%d\nrcas=%d\nrcas_strength=%d\n"
                  "render_resolution=%s\naspect_ratio=%s\n"
                  "text_language=%s\nrestart_unconfirmed=%d\nstick_dead_zone=%d\n",
                  VwGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
-                 int(v.vsync.load()), int(v.frame_interpolation.load()),
+                 int(v.vsync.load()),
                  int(v.fsr1.load()), v.anime4k.load(), int(v.rcas.load()), v.rcas_strength.load(),
                  VwGraphics::Resolutions[std::clamp(v.render_resolution.load(), 0,
                                                       int(VwGraphics::Resolutions.size()) - 1)]
