@@ -60,7 +60,8 @@ int main() {
         std::ofstream out(path);
         out << "display_mode=borderless\nvsync=0\nfps_limit=240\nasync_shaders=0\n"
                "render_resolution=1800p\naspect_ratio=21:9\ndeferred_readback=0\nstale_readback=1\n"
-               "fsr1=1\nanime4k=1\nrcas=0\nrcas_strength=40\nframes_queued=2\ntext_language=simplified_chinese\n";
+               "fsr1=1\nanime4k=1\nrcas=0\nrcas_strength=40\nframes_queued=2\ntext_language=simplified_chinese\n"
+               "renderer=shadps4\nnative_only_key=7\n";
     }
     _putenv_s("VW_CONFIG", path);
     _putenv_s("VW_ASYNC_SHADERS", "");
@@ -70,7 +71,10 @@ int main() {
     assert(v.render_resolution == 3 && v.aspect_ratio == 1 && !v.deferred_readback && v.stale_readback);
     assert(v.fsr1 && !v.rcas && v.rcas_strength == 40 && v.frames_queued == 2);
     assert(v.anime4k == G::Anime4kFast);
-    assert(v.text_language == 3 && !VwSettings::GraphicsNeedRestart());
+    assert(v.text_language == 3 && v.renderer == 1 && !VwSettings::GraphicsNeedRestart());
+    v.renderer = 0;  // run.py starts the native renderer's game executable: a restart
+    assert(VwSettings::GraphicsNeedRestart());
+    v.renderer = 1;
     v.text_language = 1;  // applied by the probe at start
     assert(VwSettings::GraphicsNeedRestart());
     v.text_language = 3;
@@ -88,7 +92,8 @@ int main() {
     for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "async_shaders=0\n",
                              "render_resolution=1800p\n", "aspect_ratio=21:9\n", "deferred_readback=0\n",
                              "stale_readback=1\n", "fsr1=1\n", "anime4k=1\n", "rcas=0\n", "rcas_strength=40\n",
-                             "frames_queued=2\n", "text_language=simplified_chinese\n"}) {
+                             "frames_queued=2\n", "text_language=simplified_chinese\n", "renderer=shadps4\n",
+                             "native_only_key=7\n"}) {
         assert(saved.find(line) != std::string::npos);
     }
     assert(saved.find("fps_limit") == std::string::npos);  // removed: the game runs at its own 60

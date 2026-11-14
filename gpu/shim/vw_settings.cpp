@@ -24,6 +24,8 @@ const char* Path() {
 
 std::mutex text_mutex;
 std::map<std::string, std::string> texts; // key_map, pad_map, button_icons
+// Keys this build does not know (the other renderer's settings): written back unchanged.
+std::map<std::string, std::string> extras;
 constexpr const char* TextKeys[] = {"key_map", "pad_map", "button_icons"};
 
 void Set(Values& v, const std::string& key, const std::string& value) {
@@ -100,6 +102,11 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.restart_unconfirmed = i != 0;
     } else if (key == "stick_dead_zone") {
         v.stick_dead_zone = std::clamp(i, 0, StickDeadZoneMax);
+    } else if (key == "renderer") {
+        v.renderer = value == "shadps4" ? 1 : 0;
+    } else if (key != "fps_limit") {  // removed: the game runs at its own 60
+        std::scoped_lock lock{text_mutex};
+        extras[key] = value;
     }
 }
 
@@ -123,6 +130,10 @@ Values& Get() {
 
 void Load() {
     auto& v = Get();
+    {
+        std::scoped_lock lock{text_mutex};
+        extras.clear();
+    }
     if (FILE* file = std::fopen(Path(), "r")) {
         char line[1280];
         while (std::fgets(line, sizeof(line), file)) {
@@ -154,13 +165,14 @@ void Load() {
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
     v.startup_text_language = v.text_language;
+    v.startup_renderer = v.renderer;
 }
 
 bool GraphicsNeedRestart() {
     const auto& v = Get();
     return v.render_resolution != v.startup_render_resolution || v.aspect_ratio != v.startup_aspect_ratio ||
            v.deferred_readback != v.startup_deferred_readback ||
-           v.stale_readback != v.startup_stale_readback || v.text_language != v.startup_text_language;
+           v.stale_readback != v.startup_stale_readback || v.text_language != v.startup_text_language || v.renderer != v.startup_renderer;
 }
 
 // Written beside vw.ini, then renamed over it: a crash or a suspend while writing kept an empty
@@ -207,12 +219,16 @@ void Save() {
                                                         int(VwGraphics::TextLanguages.size()) - 1)]
                      .data(),
                  int(v.restart_unconfirmed.load()), v.stick_dead_zone.load());
+    std::fprintf(file, "renderer=%s\n", v.renderer.load() == 1 ? "shadps4" : "native");
     {
         std::scoped_lock lock{text_mutex};
         for (const char* key : TextKeys) {
             if (const auto it = texts.find(key); it != texts.end() && !it->second.empty()) {
                 std::fprintf(file, "%s=%s\n", key, it->second.c_str());
             }
+        }
+        for (const auto& [key, value] : extras) {
+            std::fprintf(file, "%s=%s\n", key.c_str(), value.c_str());
         }
     }
     const bool written = !std::ferror(file);
