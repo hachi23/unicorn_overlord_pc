@@ -85,3 +85,15 @@ evidence in CONTRIBUTING.md remain required. Once an independent reviewer is ava
    `data/` (settings, saves, the installed game); **Skip this version** stops asking until a
    newer one exists. The rolling `latest` build counts as older than every release.
    Never delete or move a published tag: players' updaters compare against it.
+5. Add the shadPS4-edition files to the same release. v1.6.0 shipped a separate shadPS4 edition
+   (`Unicorn-Overlord-shadPS4-...`), and its installs update only to files with those names. The
+   main package already contains the shadPS4 renderer, but those players still need their own files.
+   Once the release from step 3 is published, tag the tip of branch `shadps4-edition` with the
+   same version plus `-shadps4` and push that tag:
+   ```bash
+   git tag -a v0.1.0-shadps4 origin/shadps4-edition -m "v0.1.0 (shadPS4 edition)"
+   git push origin v0.1.0-shadps4
+   ```
+   That branch's Build workflow uploads its AppImage, ZIP, symbols and source into release
+   `v0.1.0` and merges its checksums into that release's `SHA256SUMS`. Merge any fix to the
+   game executable shared by both into `shadps4-edition` first, so both packages carry it.
