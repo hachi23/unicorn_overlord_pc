@@ -48,6 +48,8 @@ int main() {
         assert(f.w == 1664 && f.h == 936 && g.w == 2320 && g.h == 1305 && h.w == 1664 && h.h == 936);
         assert(G::ParseWindowSize("1440p") == 4 && G::ParseWindowSize("auto") == 0 && G::ParseWindowSize("8K") == 0);
     }
+    assert(G::ParseFpsLimit(30) == 30 && G::ParseFpsLimit(40) == 40 && G::ParseFpsLimit(0) == 0);
+    assert(G::ParseFpsLimit(240) == 0 && G::ParseFpsLimit(-5) == 0 && G::ParseFpsLimit(35) == 0);
     assert(G::ParseAnime4k(2) == G::Anime4kQuality && G::ParseAnime4k(3) == G::Anime4kOff && G::ParseAnime4k(-1) == 0);
     // Anime4K's x2 runs above 1.2 times both ways: 1080p to 1440p, not 1080p to 1200p or 1080p.
     assert(G::Anime4kUpscales(1920, 1080, 2560, 1440) && G::Anime4kUpscales(1280, 720, 1920, 1080));
@@ -71,6 +73,7 @@ int main() {
     assert(v.render_resolution == 3 && v.aspect_ratio == 1);
     assert(v.fsr1 && !v.rcas && v.rcas_strength == 40);
     assert(v.anime4k == G::Anime4kFast);
+    assert(v.fps_limit == 0);  // 240 is not one of the choices
     assert(v.text_language == 3 && v.renderer == 1 && !VwSettings::GraphicsNeedRestart());
     v.renderer = 0;  // run.py starts the other game executable: a restart
     assert(VwSettings::GraphicsNeedRestart());
@@ -96,8 +99,21 @@ int main() {
         assert(saved.find(line) != std::string::npos);
     }
     assert(saved.find("renderer=", saved.find("renderer=") + 1) == std::string::npos);  // once
-    assert(saved.find("fps_limit") == std::string::npos);  // removed: the game runs at its own 60
+    assert(saved.find("fps_limit=0\n") != std::string::npos);
 
+    {
+        std::ofstream out(path);
+        out << "display_mode=huge\nfps_limit=7\nrender_resolution=8K\naspect_ratio=5:4\n"
+               "rcas_strength=250\nanime4k=7\nvsync=0\n";
+    }
+    {
+        std::ofstream out(path);
+        out << "fps_limit=40\n";
+    }
+    VwSettings::Load();
+    assert(v.fps_limit == 40);
+    VwSettings::Save();
+    assert(Read(path).find("fps_limit=40\n") != std::string::npos);
     {
         std::ofstream out(path);
         out << "display_mode=huge\nfps_limit=7\nrender_resolution=8K\naspect_ratio=5:4\n"
@@ -107,6 +123,7 @@ int main() {
     VwSettings::Load();
     assert(v.display_mode == G::Windowed && v.render_resolution == 0 && v.aspect_ratio == 0);
     assert(v.rcas_strength == 75 && v.anime4k == G::Anime4kOff);
+    assert(v.fps_limit == 0);  // 7 is not one of the choices
     assert(v.vsync);
 
     // The rows of the game's Options screen (vwgpu.h).

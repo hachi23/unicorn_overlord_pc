@@ -17,10 +17,19 @@ Stage Menu → System → Options (21 rows with Difficulty + the PC rows); chang
 slider (including L1/R1 steps of 10); closing and reopening; Restore Defaults; button icons
 switching at once.
 
-There is no frame rate setting: the game paces itself at its 60 Hz vblank. Measured on the
+The game paces itself at its 60 Hz vblank, so there is no 60 FPS limit. Measured on the
 title (2026-10-19): no limiter 60.0 FPS with 17 ms worst frames; a 60 FPS limiter on top
-59.6-59.8 FPS with 20-25 ms; 120 and 240 the same as none; 30 a steady 30.0. `VW_FPS_LIMIT`
-remains for measurements. FSR 1 only acts when the render resolution is smaller than the
+59.6-59.8 FPS with 20-25 ms; 120 and 240 the same as none; 30 a steady 30.0.
+
+**FPS limit** (Insert > Performance, `fps_limit=` 0/50/45/40/30, issue #111) lowers it for
+less GPU work and battery use. It is only in the Insert menu (the Options screen is full).
+VideoOut reads it every vblank, so a change applies at once; `VW_FPS_LIMIT` overrides it and
+greys the row out. The game's movement follows real time, not frames. Checked 2026-11-16 on the
+battle map (slot 04, Command Post): the same wall-clock stick holds (800, 700, 1200 ms) from the
+same start left the camera at exactly the same place at 40 and 50 FPS as at 60, and within
+~30 px at 30 (the pad is read once per 33 ms frame; the gap did not grow over the holds). Frame
+stats: 30.0, 40.0, 50.0 FPS. At 40 or 50 on a 60 Hz screen frames alternate between one and two
+refreshes; 30 is even. FSR 1 only acts when the render resolution is smaller than the
 window (720p in a 1432x806 window: visibly sharper, edge energy 25.3 -> 31.7).
 
 ## How the screen works

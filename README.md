@@ -123,7 +123,9 @@ Overworld Menu (with the game's Yes/No question). The menu has four tabs:
   image both ways, it also doubles the image before FSR 1 and the scaling. It costs GPU time per
   frame, measured on an RX 560X-class GPU at 1080p: Fast 3.3 ms, Quality 7.5 ms (a frame at 60 FPS
   has 16.7 ms), so Quality is meant for a stronger GPU.
-- **Performance:** render resolution, frames queued and the GPU readback options.
+- **Performance:** **FPS limit** (Off, 50, 45, 40 or 30: less GPU work, heat and battery use;
+  the game keeps its normal speed; on a 60 Hz screen 30 is the smoothest), render resolution and,
+  on the shadPS4 renderer, frames queued and shader compilation.
 - **Overlay:** the performance overlay.
 - **Controls:** keyboard and controller button bindings, saved in `vw.ini`, and the
   **button icons** the game shows: Auto (follows the controller in use), PlayStation, Xbox or
