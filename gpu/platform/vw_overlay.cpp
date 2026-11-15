@@ -329,6 +329,16 @@ void ImageTab() {
 void PerformanceTab() {
     namespace G = VwGraphics;
     auto& s = VwSettings::Get();
+    ImGui::SeparatorText("Frame rate");
+    if (BeginRows("##frame_rate")) {
+        ImGui::BeginDisabled(std::getenv("VW_FPS_LIMIT") && *std::getenv("VW_FPS_LIMIT"));
+        ChoiceRow("FPS limit", s.fps_limit, G::FpsLimitNames.data(), G::FpsLimits.data(), int(G::FpsLimits.size()),
+                  "Shows fewer frames per second: less GPU work, heat and battery use (handhelds, laptops). "
+                  "The game keeps its normal speed. On a 60 Hz screen 30 is the smoothest; 40 suits a 120 Hz "
+                  "or variable refresh screen (Steam Deck: set the screen to 40 Hz too).");
+        ImGui::EndDisabled();
+        ImGui::EndTable();
+    }
     ImGui::SeparatorText("Applied on restart");
     if (BeginRows("##restart")) {
         static const char* const resolution_labels[] = {"Native (1080p)", "720p (less GPU work)",

@@ -22,6 +22,7 @@
 #include "../vwgpu.h"
 #include "platform.h"
 #include "vw_overlay.h"
+#include "vw_settings.h"
 
 namespace Platform::VideoOut {
 namespace {
@@ -171,14 +172,22 @@ void FlipThread() {
         return hz ? hz : 480u;
     }();
     // Uncapped presets (VW_VBLANK_HZ=0): limited to the display rate, at most 120 FPS (faster
-    // breaks the game's movement timing). VW_FPS_LIMIT overrides.
+    // breaks the game's movement timing). The menu's FPS limit (fps_limit=, read every vblank so
+    // a change applies at once) lowers it; VW_FPS_LIMIT overrides both.
     const char* limit_env = std::getenv("VW_FPS_LIMIT");
-    const u32 frame_limit = limit_env && *limit_env ? Number("VW_FPS_LIMIT", 0)
-                            : Number("VW_VBLANK_HZ", 60) ? 0u
-                                                         : std::min<u32>(DisplayHz(), 120);
+    const bool limit_fixed = limit_env && *limit_env;
+    const u32 preset_limit = limit_fixed               ? Number("VW_FPS_LIMIT", 0)
+                             : Number("VW_VBLANK_HZ", 60) ? 0u
+                                                          : std::min<u32>(DisplayHz(), 120);
+    const auto current_limit = [&] {
+        if (limit_fixed) return preset_limit;
+        const u32 menu = u32(std::max(VwSettings::Get().fps_limit.load(std::memory_order_relaxed), 0));
+        return menu && (!preset_limit || menu < preset_limit) ? menu : preset_limit;
+    };
     const auto period = std::chrono::nanoseconds(1000000000 / vblank_hz);
-    const auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
-                                          : std::chrono::nanoseconds(0);
+    u32 frame_limit = current_limit();
+    auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
+                                    : std::chrono::nanoseconds(0);
     std::printf("VideoOut: vblank %u Hz, frame limit %u FPS\n", vblank_hz, frame_limit);
     auto next_tick = std::chrono::steady_clock::now();
     auto next_flip = next_tick;
@@ -191,6 +200,11 @@ void FlipThread() {
         return true;
     };
     for (;;) {
+        if (const u32 limit = current_limit(); limit != frame_limit) {
+            frame_limit = limit;
+            frame_period = limit ? std::chrono::nanoseconds(1000000000 / limit) : std::chrono::nanoseconds(0);
+            std::printf("VideoOut: frame limit %u FPS\n", frame_limit);
+        }
         next_tick += period;
         const auto now = std::chrono::steady_clock::now();
         if (next_tick < now - period * 4) next_tick = now + period;   // fell behind: no burst

@@ -119,6 +119,17 @@ inline bool FsrPassRuns(bool fsr1, bool rcas, int in_w, int in_h, int out_w, int
 
 /// Anime4K (host_passes/anime4k_pass.cpp), a line-art upscaler: off, or its restore and x2
 /// upscale models in the small (Fast) or medium (Quality) size.
+// FPS limit (fps_limit=, issue #111): fewer frames for less GPU work and battery use on handhelds.
+// The game's movement and timers follow real time, so it plays at the same speed. 0 = none (60).
+inline constexpr std::array<int, 5> FpsLimits = {0, 50, 45, 40, 30};
+inline constexpr std::array<const char*, 5> FpsLimitNames = {"Off (60)", "50", "45", "40", "30"};
+inline int ParseFpsLimit(int value) {
+    for (const int limit : FpsLimits) {
+        if (value == limit) return value;
+    }
+    return 0;
+}
+
 enum Anime4k : int { Anime4kOff = 0, Anime4kFast = 1, Anime4kQuality = 2, Anime4kCount };
 inline constexpr std::array<const char*, Anime4kCount> Anime4kNames = {"Off", "Fast", "Quality"};
 inline int ParseAnime4k(int value) {

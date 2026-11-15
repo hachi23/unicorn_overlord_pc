@@ -96,7 +96,9 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.stick_dead_zone = std::clamp(i, 0, StickDeadZoneMax);
     } else if (key == "renderer") {
         v.renderer = value == "shadps4" ? 1 : 0;
-    } else if (key != "fps_limit") {  // removed: the game runs at its own 60
+    } else if (key == "fps_limit") {
+        v.fps_limit = VwGraphics::ParseFpsLimit(i);
+    } else {
         std::scoped_lock lock{text_mutex};
         extras[key] = value;
     }
@@ -185,7 +187,7 @@ void Save() {
                  int(v.overlay_items >> 6 & 1), v.overlay_scale.load(), v.overlay_corner.load(),
                  v.overlay_opacity.load(), v.overlay_layout.load(), v.menu_tab.load());
     std::fprintf(file,
-                 "display_mode=%s\nwindow_size=%s\nvsync=%d\n"
+                 "display_mode=%s\nwindow_size=%s\nvsync=%d\nfps_limit=%d\n"
                  "fsr1=%d\nanime4k=%d\nrcas=%d\nrcas_strength=%d\n"
                  "render_resolution=%s\naspect_ratio=%s\n"
                  "text_language=%s\nrestart_unconfirmed=%d\nstick_dead_zone=%d\n",
@@ -193,7 +195,7 @@ void Save() {
                  VwGraphics::WindowSizes[std::clamp(v.window_size.load(), 0,
                                                     int(VwGraphics::WindowSizes.size()) - 1)]
                      .data(),
-                 int(v.vsync.load()),
+                 int(v.vsync.load()), v.fps_limit.load(),
                  int(v.fsr1.load()), v.anime4k.load(), int(v.rcas.load()), v.rcas_strength.load(),
                  VwGraphics::Resolutions[std::clamp(v.render_resolution.load(), 0,
                                                       int(VwGraphics::Resolutions.size()) - 1)]
