@@ -34,6 +34,16 @@ def global_data():
     return g
 
 
+def switch_global(cleared=1):
+    g = bytearray(ss.SWITCH_GLOBAL_SIZE)
+    struct.pack_into('<4sI', g, 4, b'UCSG', 0x1C50D5)
+    g[0x3C] = cleared                     # cleared once: True Zenoiran
+    g[0x4C0] = 2                          # a Library entry
+    g[0x1010] = 7                         # last slot used: not part of the record
+    g[0x1818 + 4:0x1818 + 8] = b'UCSD'    # a Load list entry: not copied either
+    return bytes(g)
+
+
 class ConvertTest(unittest.TestCase):
     def test_moves_every_block_to_its_ps4_place(self):
         ps4 = ss.convert(switch_save())
@@ -63,7 +73,7 @@ class ImportTest(unittest.TestCase):
             switch.mkdir(parents=True)
             (switch / 'UCSAVEFILE00_AUTOSAVE.DAT').write_bytes(switch_save(0))
             (switch / 'UCSAVEFILE03.DAT').write_bytes(switch_save(3))
-            (switch / 'UCGLOBALDATA.DAT').write_bytes(b'\0' * 200888)
+            (switch / 'UCGLOBALDATA.DAT').write_bytes(switch_global())
             user = tmp / 'user'
             title = user / 'savedata' / '1' / 'CUSA36381'
             (title / 'GLOBALDATA').mkdir(parents=True)
@@ -77,6 +87,24 @@ class ImportTest(unittest.TestCase):
             g = (title / 'GLOBALDATA' / 'UCGLOBALDATA.DAT').read_bytes()
             self.assertEqual(g[0x1818 + 3 * 0x48 + 4:0x1818 + 3 * 0x48 + 0x11], b'UCSD\xd5P\x1c\x00 \xf7M\x00\x03')
             self.assertEqual(len(list((user / 'savedata_backups').iterdir())), 1)
+            self.assertEqual((g[0x3C], g[0x4C0], g[0x1010]), (1, 2, 0))
+            self.assertEqual(g[0x1818 + 0x48 + 4:0x1818 + 0x48 + 8], b'\0' * 4)
+
+    def test_without_a_switch_global_file_the_record_stays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / 'switch').mkdir()
+            (tmp / 'switch' / 'UCSAVEFILE01.DAT').write_bytes(switch_save())
+            (tmp / 'switch' / 'UCGLOBALDATA.DAT').write_bytes(b'\0' * 200888)  # no header: ignored
+            title = tmp / 'user' / 'savedata' / '1' / 'CUSA36381'
+            (title / 'GLOBALDATA').mkdir(parents=True)
+            g = global_data()
+            g[0x3C] = 5
+            (title / 'GLOBALDATA' / 'UCGLOBALDATA.DAT').write_bytes(g)
+
+            ss.import_all(tmp / 'switch', tmp / 'user')
+
+            self.assertEqual((title / 'GLOBALDATA' / 'UCGLOBALDATA.DAT').read_bytes()[0x3C], 5)
 
     def test_needs_the_game_started_once(self):
         with tempfile.TemporaryDirectory() as tmp:

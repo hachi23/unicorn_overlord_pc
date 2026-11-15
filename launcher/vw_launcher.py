@@ -822,6 +822,8 @@ def import_switch_saves(data, source=None):
             return 1
         names = '\n'.join(f'{path.name}  →  {"Auto" if slot == 0 else f"slot {slot:02d}"}'
                           for slot, path in files)
+        if switch_save.switch_global(source):
+            names += '\nUCGLOBALDATA.DAT  →  clear record (True Zenoiran) and Library'
         if not messagebox.askokcancel(title, f'{names}\n\nThese slots are replaced; close the game first. Your current '
                                       'saves are backed up first (data/user/savedata_backups).',
                                       parent=root):

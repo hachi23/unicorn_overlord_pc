@@ -17,7 +17,8 @@ is the same bytes, moved. Found by comparing the two builds' save init code (PS4
 
 usage: switch_save.py <Switch save folder or file> <user folder (data/user)> [slot]
 A folder imports UCSAVEFILE00_AUTOSAVE.DAT to slot 0 (Auto) and UCSAVEFILE0n.DAT to slot n;
-a single file goes to the slot given. Close the game first. The saves are backed up first
+a single file goes to the slot given. A UCGLOBALDATA.DAT next to the saves brings the clear
+record (True Zenoiran at New Game, issue #110) and the Library. Close the game first. The saves are backed up first
 (data/user/savedata_backups, the same backups the launcher makes before every start).
 """
 import re
@@ -82,6 +83,45 @@ def title_dir(user_dir):
     return Path(user_dir) / 'savedata' / '1' / 'CUSA36381'
 
 
+# UCGLOBALDATA.DAT starts the same on both builds, up to the Load list. Its first block
+# (0x10..0x1010, one memset in the PS4 init at 0x510e80) is the record kept across playthroughs:
+# +0x3C is "cleared once", which makes New Game offer the fifth difficulty (UcUI_DifficultyChoice
+# item count = 4 + cleared, 0x5adecf), and the Library's seen flags follow it. Settings sit near
+# the end of the file, at other offsets on each build; they are not copied.
+SWITCH_GLOBAL_SIZE = 200888
+RECORDS = (0x10, 0x1010)
+
+
+def is_switch_global(data):
+    return (len(data) == SWITCH_GLOBAL_SIZE and data[4:8] == b'UCSG'
+            and struct.unpack_from('<I', data, 8)[0] == VERSION)
+
+
+def switch_global(source):
+    """The Switch UCGLOBALDATA.DAT beside the saves at `source` (a folder searched like
+    switch_files, or a save file's folder), or None."""
+    source = Path(source)
+    folder = source.parent if source.is_file() else source
+    for path in (sorted(folder.glob('UCGLOBALDATA.DAT')) + sorted(folder.glob('*/UCGLOBALDATA.DAT'))
+                 + sorted(folder.glob('*/*/UCGLOBALDATA.DAT'))):
+        if is_switch_global(path.read_bytes()):
+            return path
+    return None
+
+
+def import_records(user_dir, switch_global_data):
+    """Copies the Switch clear record and Library (RECORDS) into the port's UCGLOBALDATA.DAT."""
+    if not is_switch_global(switch_global_data):
+        raise ValueError('not a Switch UCGLOBALDATA.DAT (expected %d bytes with a UCSG header)' % SWITCH_GLOBAL_SIZE)
+    glob = title_dir(user_dir) / 'GLOBALDATA' / 'UCGLOBALDATA.DAT'
+    g = bytearray(glob.read_bytes())
+    if g[4:8] != b'UCSG':
+        raise ValueError('%s: no UCSG header' % glob)
+    a, b = RECORDS
+    g[a:b] = switch_global_data[a:b]
+    glob.write_bytes(bytes(g))
+
+
 class NoGlobalData(ValueError):
     """The game has not made its save data yet."""
 
@@ -134,11 +174,14 @@ def import_all(source, user_dir, slot=None):
     if any(s is None for s, _ in files):
         raise ValueError('give the slot for %s' % files[0][1].name)
     converted = [(s, path, convert(path.read_bytes())) for s, path in files]  # all, before writing
+    records = switch_global(source)
     if not title_dir(user_dir).joinpath('GLOBALDATA', 'UCGLOBALDATA.DAT').is_file():
         raise NoGlobalData('Start the game once and reach the title screen first: '
                            'the port has no save data yet.')
     from save_backup import backup
     backup(user_dir)
+    if records:
+        import_records(user_dir, records.read_bytes())
     for s, path, data in converted:
         import_save(user_dir, s, data)
     return [(s, path) for s, path, _ in converted]
@@ -153,6 +196,9 @@ def main(argv):
         raise SystemExit(str(error))
     for slot, path in done:
         print('slot %d%s: %s' % (slot, ' (Auto)' if slot == 0 else '', path))
+    records = switch_global(argv[1])
+    if records:
+        print('clear record and Library: %s' % records)
 
 
 if __name__ == '__main__':
