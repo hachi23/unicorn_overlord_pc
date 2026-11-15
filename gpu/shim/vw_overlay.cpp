@@ -339,6 +339,12 @@ void PerformanceTab() {
     auto& s = VwSettings::Get();
     ImGui::SeparatorText("Live");
     if (BeginRows("##live")) {
+        ImGui::BeginDisabled(std::getenv("VW_FPS_LIMIT") && *std::getenv("VW_FPS_LIMIT"));
+        ChoiceRow("FPS limit", s.fps_limit, G::FpsLimitNames.data(), G::FpsLimits.data(), int(G::FpsLimits.size()),
+                  "Shows fewer frames per second: less GPU work, heat and battery use (handhelds, laptops). "
+                  "The game keeps its normal speed. On a 60 Hz screen 30 is the smoothest; 40 suits a 120 Hz "
+                  "or variable refresh screen (Steam Deck: set the screen to 40 Hz too).");
+        ImGui::EndDisabled();
         static const char* const queued_labels[] = {"1 (lowest latency)", "2", "Unlimited"};
         ChoiceRow("Frames queued", s.frames_queued, queued_labels, G::FramesQueued.data(),
                   int(G::FramesQueued.size()), "More frames queued: steadier FPS, slower response to input.");
