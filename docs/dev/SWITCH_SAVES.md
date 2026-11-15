@@ -15,8 +15,9 @@ Limits:
   and on the v1.5.x shadPS4 build alike. Present waits for GPU work that never finishes. It looks
   like a port problem on that stage, not the conversion: everything else in the same save works.
   It is not settled until a PS4 save at that stage has been tried.
-- `UCGLOBALDATA.DAT` (settings, Library, the Load list) is not converted. The importer writes
-  only the Load list entries of the slots it fills.
+- From `UCGLOBALDATA.DAT` the importer copies only the record kept across playthroughs
+  (0x10..0x1010: the clear flag and the Library) and writes the Load list entries of the slots
+  it fills. Settings are not copied.
 
 ## The files
 
@@ -34,6 +35,19 @@ Switch file without complaint and get the wrong data: never load one unconverted
 
 The Load list comes from the global file: 100 records of 0x48 bytes at 0x1818, one per slot. A
 used record is the first 0x48 bytes of that slot's save. Slot 0 is Auto.
+
+The global file is laid out the same on both builds up to the Load list (the Switch file is
+smaller after it). The PS4 game keeps it in a static buffer (0x1661f10, pointer at game+0x100;
+init 0x510e80 clears 0x10..0x1010 in one memset). In that block:
+
+| Offset | Content |
+|---|---|
+| 0x3C | Cleared once. New Game's difficulty list (`UcUI_DifficultyChoice`, 0x5adecf) gets a fifth entry, True Zenoiran, when it is set (issue #110) |
+| 0x4C0.. | Library entries (2 = seen) |
+| 0x1010 | Last save slot used (0xFF none): outside the copied block |
+
+Checked in game: after importing the #71 Switch save, the difficulty prompt (after the first
+battle, Palevia Harbor) lists True Zenoiran.
 
 ## The layout
 
