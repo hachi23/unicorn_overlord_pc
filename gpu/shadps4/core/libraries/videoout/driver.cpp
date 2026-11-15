@@ -658,8 +658,18 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // until its slot; slots advance by one period (no drift) but never lag behind by more.
     // vw: none by default: the game paces itself at the 60 Hz vblank (a 60 FPS limit on top
     // only adds jitter: 59.6-59.8 FPS, 20-25 ms worst frames against 60.0 FPS, 17 ms).
-    const u32 frame_limit = EmulatorSettings.GetFrameLimit();
-    const auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
+    // vw: the menu's FPS limit (fps_limit=, issue #111) lowers it, read every vblank so a change
+    // applies at once; VW_FPS_LIMIT overrides both.
+    const char* limit_env = std::getenv("VW_FPS_LIMIT");
+    const bool limit_fixed = limit_env && *limit_env;
+    const u32 preset_limit = EmulatorSettings.GetFrameLimit();
+    const auto current_limit = [&] {
+        if (limit_fixed) return preset_limit;
+        const u32 menu = u32(std::max(VwSettings::Get().fps_limit.load(std::memory_order_relaxed), 0));
+        return menu && (!preset_limit || menu < preset_limit) ? menu : preset_limit;
+    };
+    u32 frame_limit = current_limit();
+    auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
                                     : std::chrono::nanoseconds(0);
     auto next_flip = std::chrono::steady_clock::now();
     std::printf("VideoOut: vblank %u Hz, frame limit %u FPS\n",
@@ -677,9 +687,13 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     // vw: with a frame limit (uncapped presets) a queued flip is presented as soon as it
     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
-    const bool immediate_flips = frame_limit != 0;
-
     while (!token.stop_requested()) {
+        if (const u32 limit = current_limit(); limit != frame_limit) {
+            frame_limit = limit;
+            frame_period = limit ? std::chrono::nanoseconds(1000000000 / limit) : std::chrono::nanoseconds(0);
+            std::printf("VideoOut: frame limit %u FPS\n", frame_limit);
+        }
+        const bool immediate_flips = frame_limit != 0;
         timer.Start();
         const auto tick_deadline = std::chrono::steady_clock::now() + vblank_period;
 
