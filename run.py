@@ -221,6 +221,12 @@ def main():
     if restarted:
         wait_for(int(args[1]))
         args = args[2:]
+    # A packaged program takes relative VW_GAME_DIR / VW_DATA_DIR from its own folder, so they
+    # survive the chdir below and a copy of the program folder keeps working where it is moved.
+    if getattr(sys, 'frozen', False):
+        for key in ('VW_GAME_DIR', 'VW_DATA_DIR'):
+            if os.environ.get(key) and not Path(os.environ[key]).is_absolute():
+                os.environ[key] = str((Path(sys.executable).resolve().parent / os.environ[key]).resolve())
     # Relative paths (VW_GAME_DIR, VW_DATA_DIR) are from the port.
     os.chdir(PORT)
     env = os.environ

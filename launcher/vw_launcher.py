@@ -110,17 +110,51 @@ sys.path.insert(0, str(RUNTIME / 'scripts'))
 from patches import eboot_supported, game_app_version, game_title_id  # noqa: E402
 
 
-def load_settings(data):
+PATH_SETTINGS = ('source_dir', 'game_dir')  # folders launcher.json keeps
+
+
+def stored_path(data, path):
+    """A folder as launcher.json keeps it: relative to the program's folder (the one holding
+    data/), with forward slashes, when it is inside it, so the whole folder can be moved or copied
+    (a USB drive, another PC) and still finds its game. Any other folder stays absolute. From the
+    source tree (run directory inside the repository) paths are kept as they are."""
+    if not FROZEN or not isinstance(path, str) or not path or not Path(path).is_absolute():
+        return path
     try:
-        return json.loads((data / 'launcher.json').read_text(encoding='utf-8'))
+        return Path(path).resolve().relative_to(data.parent.resolve()).as_posix()
+    except (OSError, ValueError):
+        return path
+
+
+def resolved_path(data, path):
+    """The inverse of stored_path: a relative folder in launcher.json is from the program's folder,
+    not from the current directory (a shortcut, a launcher or a terminal can start it anywhere)."""
+    if not FROZEN or not isinstance(path, str) or not path or Path(path).is_absolute():
+        return path
+    return str(data.parent / path)
+
+
+def load_settings(data):
+    """launcher.json with its folders made absolute, so the rest of the launcher (and run.py, which
+    changes directory) never sees a relative one."""
+    try:
+        settings = json.loads((data / 'launcher.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
+    if not isinstance(settings, dict):
+        return {}
+    for key in PATH_SETTINGS:
+        if key in settings:
+            settings[key] = resolved_path(data, settings[key])
+    return settings
 
 
 def save_settings(data, settings):
     data.mkdir(parents=True, exist_ok=True)
+    stored = {key: stored_path(data, value) if key in PATH_SETTINGS else value
+              for key, value in settings.items()}
     temp = data / 'launcher.json.tmp'  # renamed over it: an interrupted write keeps the old file
-    temp.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    temp.write_text(json.dumps(stored, indent=2), encoding='utf-8')
     os.replace(temp, data / 'launcher.json')
 
 
