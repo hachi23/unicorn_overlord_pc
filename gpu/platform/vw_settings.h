@@ -24,6 +24,8 @@ struct Values {
     std::atomic<int> display_mode{0};
     /// Index into VwGraphics::WindowSizes: the window's size in Windowed mode.
     std::atomic<int> window_size{0};
+    /// Index into VwGraphics::ScreenFit: fit (letterbox), fill (center-crop), stretch.
+    std::atomic<int> screen_fit{0};
     std::atomic<bool> vsync{true};
     /// Frames per second shown at most (VwGraphics::FpsLimits; 0 none). Read by VideoOut every
     /// vblank; VW_FPS_LIMIT (any number, for measurements) overrides it.

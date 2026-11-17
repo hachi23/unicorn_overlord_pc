@@ -4,6 +4,7 @@
 // launch and apply through "Apply and restart". The launcher reads and writes the same keys.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <string_view>
 
@@ -139,6 +140,29 @@ inline int ParseAnime4k(int value) {
 /// condition); otherwise only the restore model runs and FSR 1 or the scaling does the rest.
 inline bool Anime4kUpscales(int in_w, int in_h, int out_w, int out_h) {
     return out_w * 5 > in_w * 6 && out_h * 5 > in_h * 6;
+}
+
+/// How the game's image fills a window with a different aspect ratio (e.g. 16:9 on 16:10).
+enum ScreenFit : int { ScreenFitFit = 0, ScreenFitStretch = 1, ScreenFitCount };
+inline constexpr std::array<std::string_view, ScreenFitCount> ScreenFitKeys = {"fit", "stretch"};
+inline constexpr std::array<const char*, ScreenFitCount> ScreenFitNames = {
+    "Fit (black bars)", "Stretch (fill screen)"};
+inline int ParseScreenFit(std::string_view text) {
+    return IndexOf(ScreenFitKeys, text, ScreenFitFit);
+}
+
+/// Presenter frame size for `target_w x target_h` and `game_ratio` under `screen_fit`.
+inline Size FrameSize(int target_w, int target_h, float game_ratio, int screen_fit) {
+    const int tw = std::max(target_w, 1), th = std::max(target_h, 1);
+    if (screen_fit == ScreenFitStretch || !(game_ratio > 0.0f)) {
+        return {tw, th};
+    }
+    int w = tw, h = th;
+    if (float(tw) / float(th) > game_ratio)
+        w = int(float(th) * game_ratio);
+    else
+        h = int(float(tw) / game_ratio);
+    return {std::max(w, 1), std::max(h, 1)};
 }
 
 } // namespace VwGraphics

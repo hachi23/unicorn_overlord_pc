@@ -118,7 +118,8 @@ In game, **Insert** (R3+L2 on a controller) opens the port's overlay menu with e
 title menu and in the System submenu of the battle map's Stage Menu and the world map's
 Overworld Menu (with the game's Yes/No question). The menu has four tabs:
 
-- **Image:** display mode, VSync, **Anime4K**, FSR 1 and RCAS sharpening. Anime4K (Fast or
+- **Image:** display mode, **Screen fit** (Fit with bars, or Stretch to fill non-16:9 screens
+  such as 16:10), VSync, **Anime4K**, FSR 1 and RCAS sharpening. Anime4K (Fast or
   Quality) redraws the game's line art sharper; when the window is more than 1.2 times the game's
   image both ways, it also doubles the image before FSR 1 and the scaling. It costs GPU time per
   frame, measured on an RX 560X-class GPU at 1080p: Fast 3.3 ms, Quality 7.5 ms (a frame at 60 FPS
