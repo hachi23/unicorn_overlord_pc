@@ -682,13 +682,13 @@ VkImageView NativeView(VkImage image, bool srgb) {
 }
 
 /// Records the passes from the game's image into `frame`.
-void DrawFrame(VkCommandBuffer cmd, VkImage image, u32 width, u32 height, DisplayFormat format) {
+void DrawFrame(VkCommandBuffer cmd, VkImage image, u32 width, u32 height, DisplayFormat format, int fit) {
     const bool srgb = format == DisplayFormat::Srgb;
     VkImageView view = NativeView(image, srgb);
     VkExtent2D size{width, height};
     game_ratio = float(width) / float(height);
     auto& s = VwSettings::Get();
-    const VkExtent2D frame_size = FrameSize(swapchain.extent, s.screen_fit.load());
+    const VkExtent2D frame_size = FrameSize(swapchain.extent, fit);
     if (frame.width != frame_size.width || frame.height != frame_size.height) {
         if (frame.image) WaitIdle();
         DestroyImage(frame);
@@ -795,7 +795,8 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
     vkBeginCommandBuffer(cmd, &begin);
 
     static const char* dump_trigger = std::getenv("VW_FRAME_DUMP_TRIGGER");
-    if (image) DrawFrame(cmd, image, width, height, format);
+    const int fit = VwSettings::Get().screen_fit.load();
+    if (image) DrawFrame(cmd, image, width, height, format, fit);
     else if (draw) frame_valid = false;
     const bool dump = image && dump_trigger && std::remove(dump_trigger) == 0;
     Dump dumped;
@@ -811,7 +812,6 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
         MemoryBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
         const VkExtent2D e = swapchain.extent;
-        const int fit = VwSettings::Get().screen_fit.load();
         VkImageBlit blit{};
         if (fit == VwGraphics::ScreenFitStretch) {
             blit = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
@@ -871,6 +871,8 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
         Check(vkQueueSubmit(vk.queue, 1, &submit, slot.done), "present submit");
         presented = vkQueuePresentKHR(vk.queue, &present);
     }
+    if (presented == VK_SUCCESS || presented == VK_SUBOPTIMAL_KHR)
+        VwSettings::Get().image_stretched = frame_valid && fit == VwGraphics::ScreenFitStretch;
     if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR) UpdateSwapchain(true);
     if (dump) WriteDump(dumped, slot.done);
 }
