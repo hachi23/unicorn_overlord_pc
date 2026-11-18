@@ -112,8 +112,15 @@ enum { MAX_TARGETS = 1024, MAX_TEXTURES = 2048, MAX_PIPELINES = 4096, MAX_SAMPLE
        MAX_IMAGES = MAX_TARGETS + MAX_TEXTURES + 16 };
 
 /* index: the image's place in the bindless texture array (set 1, binding 0). */
-typedef struct { VkImage image; VkDeviceMemory memory; VkImageView view; uint32_t index; } Image;
-typedef struct { VkBuffer buffer; VkDeviceMemory memory; uint8_t *mapped; VkDeviceSize size, used; VkDeviceAddress address; } Ring;
+typedef struct { VkImage image; VkDeviceMemory memory; VkImageView view; uint32_t index; VkDeviceSize bytes; } Image;
+typedef struct Ring {
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+    uint8_t *mapped;
+    VkDeviceSize size, used;
+    VkDeviceAddress address;
+    struct Ring *next;
+} Ring;
 /* Each draw's record (the layout src/native_shader_spirv.c reads): per texture slot the bindless
  * texture index (low 20 bits) and sampler index (high 12 bits); per stage and game constant slot
  * the GPU address of its block (an unbound slot reads the ring's zeroed start); per vertex input
@@ -129,10 +136,15 @@ typedef struct {
 } Record;
 _Static_assert(sizeof(Record) == 544, "Record must match the layout src/native_shader_spirv.c reads");
 typedef struct { VkDeviceAddress records; } Push;
-typedef struct { uint64_t address; uint32_t width, height, swap, tiling; Image image; } Target;
+typedef struct Target {
+    uint64_t address;
+    uint32_t width, height, swap, tiling;
+    Image image;
+    struct Target *next;
+} Target;
 /* source: the descriptor it was made from; span: the bytes of game memory it reads; hash: of
  * that memory when last uploaded (the game reuses memory for new content, see textures_check);
- * used: the last frame that drew with it or uploaded into it (see texture_slot). */
+ * used: the last frame that drew with it or uploaded into it (see texture_evict). */
 typedef struct {
     uint64_t address; uint32_t width, height, format, number, tiling; uint8_t swizzle[4]; Image image;
     GnmTexture source; size_t span; uint64_t hash, used;
@@ -223,6 +235,8 @@ typedef struct {
     VkCommandBuffer cmd;
     VkFence fence;
     Ring constants, vertex, index, records, indirect;
+    Ring *vertex_chunk;
+    Target *retired_targets;
     /* Texture uploads: kept between frames, so its pages fault in only once (a new allocation
      * per texture spent as long in page faults as in detiling). Grown at the slot's
      * next use when a frame needed more; what does not fit goes to one-off staging buffers. */
@@ -237,11 +251,13 @@ static VkCommandBuffer cmd, once_cmd;
 #define constants_ring (frame->constants)
 #define vertex_ring (frame->vertex)
 #define index_ring (frame->index)
-static Target targets[MAX_TARGETS];
+static Target targets[MAX_TARGETS], *free_targets;
 static Texture textures[MAX_TEXTURES];
 static Pipeline pipelines[MAX_PIPELINES];
 static struct { uint32_t key[2]; VkSampler sampler; } samplers[MAX_SAMPLERS];
-static uint32_t target_count, texture_count, pipeline_count, sampler_count;
+static uint32_t target_slots, texture_slots, target_count, texture_count, pipeline_count, sampler_count;
+static uint64_t targets_created, textures_created;
+static VkDeviceSize texture_bytes, target_bytes;
 #define staging_count (frame->staging_count)
 #define staging (frame->staging)
 static Image dummy_texture;
@@ -275,6 +291,8 @@ static uint32_t memory_type(uint32_t bits, VkMemoryPropertyFlags flags) {
     fprintf(stderr, "Native: no memory type for %x\n", (unsigned)flags);
     abort();
 }
+static void allocate_image_memory(const VkMemoryAllocateInfo *allocate, VkDeviceMemory *memory);
+
 static Image image_create(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage, const uint8_t *swizzle) {
     Image image;
     const VkImageCreateInfo info = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
@@ -285,7 +303,8 @@ static Image image_create(uint32_t width, uint32_t height, VkFormat format, VkIm
     vkGetImageMemoryRequirements(device, image.image, &need);
     const VkMemoryAllocateInfo allocate = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = need.size,
         .memoryTypeIndex = memory_type(need.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-    CHECK(vkAllocateMemory(device, &allocate, NULL, &image.memory));
+    allocate_image_memory(&allocate, &image.memory);
+    image.bytes = need.size;
     CHECK(vkBindImageMemory(device, image.image, image.memory, 0));
     VkImageViewCreateInfo view = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = image.image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = format,
@@ -380,6 +399,29 @@ static VkDeviceSize ring_put(Ring *ring, const void *data, size_t bytes, size_t 
     if (bytes) memcpy(ring->mapped + at, data, bytes);
     ring->used = at + bytes;
     return at;
+}
+/* Already recorded draws hold device addresses, so a busy vertex chunk cannot move. */
+static VkDeviceAddress vertex_put(const void *data, size_t bytes) {
+    enum { CHUNK_SIZE = 16 << 20, SLACK = 64 };
+    Ring *chunk = frame->vertex_chunk;
+    const VkDeviceSize at = (chunk->used + 3) & ~(VkDeviceSize)3;
+    if (at + bytes + SLACK > chunk->size) {
+        if (!chunk->next) {
+            chunk->next = calloc(1, sizeof(*chunk));
+            if (!chunk->next) { fprintf(stderr, "Native: cannot allocate a vertex chunk\n"); abort(); }
+        }
+        chunk = frame->vertex_chunk = chunk->next;
+        if (chunk->size < bytes + SLACK) {
+            if (chunk->buffer) {
+                vkDestroyBuffer(device, chunk->buffer, NULL);
+                vkFreeMemory(device, chunk->memory, NULL);
+            }
+            const VkDeviceSize size = (bytes + SLACK + CHUNK_SIZE - 1) & ~(VkDeviceSize)(CHUNK_SIZE - 1);
+            ring_create(chunk, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+        }
+        chunk->used = 0;
+    }
+    return chunk->address + ring_put(chunk, data, bytes, 4, SLACK);
 }
 static void to_general(VkImage image, VkImageLayout from) {
     const VkImageMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .oldLayout = from,
@@ -492,18 +534,39 @@ static Target *target_of(uint64_t address) {
     const uint32_t i = map_get(&target_map, address);
     return i ? &targets[i - 1] : NULL;
 }
+static VkDeviceSize targets_collect(Frame *completed) {
+    VkDeviceSize bytes = 0;
+    while (completed->retired_targets) {
+        Target *target = completed->retired_targets;
+        completed->retired_targets = target->next;
+        bytes += target->image.bytes;
+        --target_count;
+        image_destroy(&target->image);
+        target->next = free_targets;
+        free_targets = target;
+    }
+    target_bytes -= bytes;
+    return bytes;
+}
+
 static Target *target_get(const GnmTarget *t) {
     Target *target = target_of(t->address);
     if (target && target->width == t->width && target->height == t->height) return target;
     if (!t->width || !t->height) return NULL;
     end_rendering();
     if (target) {
-        /* The game reuses the memory for another size: the old image is dropped with the device. */
-        target->address = ~0ull;
+        /* Earlier commands in this frame may still reference the old image and its descriptor. */
+        target->next = frame->retired_targets;
+        frame->retired_targets = target;
     }
-    if (target_count == MAX_TARGETS) { fprintf(stderr, "Native: more than %d render targets\n", MAX_TARGETS); abort(); }
-    target = &targets[target_count++];
-    map_set(&target_map, t->address, target_count);
+    if (free_targets) {
+        target = free_targets;
+        free_targets = target->next;
+    } else {
+        if (target_slots == MAX_TARGETS) { fprintf(stderr, "Native: more than %d render targets\n", MAX_TARGETS); abort(); }
+        target = &targets[target_slots++];
+    }
+    map_set(&target_map, t->address, (uint32_t)(target - targets) + 1);
     target->address = t->address; target->width = t->width; target->height = t->height;
     target->swap = t->swap; target->tiling = t->tiling;
     if (getenv("VW_NATIVE_LOG_TARGETS"))
@@ -512,6 +575,9 @@ static Target *target_get(const GnmTarget *t) {
     target->image = image_create(t->width, t->height, VK_FORMAT_R8G8B8A8_UNORM,
                                  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, NULL);
+    target_bytes += target->image.bytes;
+    ++targets_created;
+    ++target_count;
     to_general(target->image.image, VK_IMAGE_LAYOUT_UNDEFINED);
     const VkClearColorValue zero = {{0, 0, 0, 0}};
     const VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
@@ -672,9 +738,10 @@ static void textures_check(void) {
     static uint32_t cursor;
     size_t hashed = 0;
     int barrier_done = 0;
-    for (uint32_t n = 0; n < texture_count && hashed < BUDGET && staging_count < MAX_STAGING; ++n) {
-        if (cursor >= texture_count) cursor = 0;
+    for (uint32_t n = 0; n < texture_slots && hashed < BUDGET && staging_count < MAX_STAGING; ++n) {
+        if (cursor >= texture_slots) cursor = 0;
         Texture *x = &textures[cursor++];
+        if (!x->image.image) continue;
         hashed += x->span;
         if (memory_sample_hash((const uint8_t *)(uintptr_t)x->address, x->span) == x->hash) continue;
         if (!barrier_done) {
@@ -688,22 +755,65 @@ static void textures_check(void) {
         ++texture_reloads;
     }
 }
-/* A slot for a new texture. The game frees assets and loads others (each battle, each stage),
- * and describes reused memory with new sizes and formats, so textures stop being drawn. When
- * all slots are taken, the least recently used texture that no frame in flight reads (last
- * used before the previous frame; render_frame waited for the fence of the one before it)
- * is destroyed and its slot and bindless index reused. NULL: every texture is still in use. */
-static Texture *texture_slot(void) {
-    if (texture_count < MAX_TEXTURES) return &textures[texture_count++];
+/* Uploads and draws keep their descriptor indices until the last referencing fence signals. */
+static VkDeviceSize texture_evict(uint64_t completed) {
     Texture *oldest = NULL;
-    for (uint32_t i = 0; i < MAX_TEXTURES; ++i)
-        if (textures[i].used + FRAMES <= frame_number && (!oldest || textures[i].used < oldest->used)) oldest = &textures[i];
-    if (!oldest) return NULL;
+    for (uint32_t i = 0; i < texture_slots; ++i) {
+        Texture *x = &textures[i];
+        if (x->image.image && x->used <= completed && (!oldest || x->used < oldest->used)) oldest = x;
+    }
+    if (!oldest) return 0;
     if (map_get(&texture_map, oldest->address) == (uint32_t)(oldest - textures) + 1) map_remove(&texture_map, oldest->address);
+    const VkDeviceSize bytes = oldest->image.bytes;
     image_destroy(&oldest->image);
+    texture_bytes -= bytes;
+    --texture_count;
     ++texture_evictions;
-    return oldest;
+    return bytes;
 }
+static Texture *texture_slot(void) {
+    if (texture_count == MAX_TEXTURES && (frame_number < FRAMES || !texture_evict(frame_number - FRAMES))) return NULL;
+    if (texture_count < texture_slots) {
+        for (uint32_t i = 0; i < texture_slots; ++i)
+            if (!textures[i].image.image) return &textures[i];
+    }
+    return &textures[texture_slots++];
+}
+
+/* A count limit cannot bound VRAM: two textures can differ in size by orders of magnitude.
+ * Reclaim unused images on allocation failure, even when the cache still has free slots. */
+static void allocate_image_memory(const VkMemoryAllocateInfo *allocate, VkDeviceMemory *memory) {
+    VkResult result = vkAllocateMemory(device, allocate, NULL, memory);
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY && frame_number > 0) {
+        uint64_t completed = frame_number >= FRAMES ? frame_number - FRAMES : 0;
+        VkDeviceSize reclaimed = 0;
+        fprintf(stderr, "Native: image allocation of %" PRIu64 " bytes failed (%" PRIu64
+                        " cached texture bytes, %" PRIu64 " target bytes)\n",
+                (uint64_t)allocate->allocationSize, (uint64_t)texture_bytes, (uint64_t)target_bytes);
+        do {
+            VkDeviceSize batch = 0;
+            while (batch < allocate->allocationSize) {
+                const VkDeviceSize bytes = texture_evict(completed);
+                if (!bytes) break;
+                batch += bytes;
+            }
+            if (!batch && completed + 1 < frame_number) {
+                completed = frame_number - 1;
+                Frame *previous = &frames[completed % FRAMES];
+                CHECK(vkWaitForFences(device, 1, &previous->fence, VK_TRUE, UINT64_MAX));
+                batch = targets_collect(previous);
+                if (!batch) continue;
+            }
+            if (!batch) break;
+            reclaimed += batch;
+            result = vkAllocateMemory(device, allocate, NULL, memory);
+        } while (result == VK_ERROR_OUT_OF_DEVICE_MEMORY);
+        if (result == VK_SUCCESS)
+            fprintf(stderr, "Native: image allocation recovered after freeing %" PRIu64 " bytes\n", (uint64_t)reclaimed);
+    }
+    if (result != VK_SUCCESS) vk_failed(result, "vkAllocateMemory (native image)", __FILE__, __LINE__);
+}
+
 static uint32_t texture_index(const uint8_t raw[32]) {
     GnmTexture t;
     gnm_texture(raw, &t);
@@ -729,7 +839,6 @@ static uint32_t texture_index(const uint8_t raw[32]) {
                    t.height, t.format, t.number, t.tiling, bytes && !x ? " (all textures in use)" : "");
         return dummy_texture.index;
     }
-    map_set(&texture_map, t.address, (uint32_t)(x - textures) + 1);
     x->address = t.address; x->width = t.width; x->height = t.height; x->format = t.format; x->number = t.number;
     x->tiling = t.tiling;
     memcpy(x->swizzle, t.swizzle, 4);
@@ -737,6 +846,10 @@ static uint32_t texture_index(const uint8_t raw[32]) {
     const uint32_t height = block ? (t.height + 3) / 4 : t.height, pitch = block ? (t.pitch + 3) / 4 : t.pitch;
     x->span = (size_t)pitch * (t.tiling == 13 ? (height + 7) & ~7u : height) * bytes;
     x->image = image_create(t.width, t.height, format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, t.swizzle);
+    map_set(&texture_map, t.address, (uint32_t)(x - textures) + 1);
+    texture_bytes += x->image.bytes;
+    ++textures_created;
+    ++texture_count;
     end_rendering();
     to_general(x->image.image, VK_IMAGE_LAYOUT_UNDEFINED);
     texture_fill(x);
@@ -1017,9 +1130,9 @@ static void draw(const uint8_t *payload) {
      * shader; inputs without one read (0, 0, 0, 1). */
     RecordStream inputs[RECORD_STREAMS];
     memset(inputs, 0, sizeof(inputs));
-    VkDeviceSize range_at[32];
+    VkDeviceAddress range_address[32];
     for (uint32_t r = 0; r < d->range_count; ++r)
-        range_at[r] = ring_put(&vertex_ring, payload + ranges[r].data, ranges[r].bytes, 4, 64);
+        range_address[r] = vertex_put(payload + ranges[r].data, ranges[r].bytes);
     for (uint32_t k = 0; k < d->stream_count; ++k) {
         const NativeStream *s = &streams[k];
         const uint32_t location = s->location == NATIVE_NO_LOCATION ? s->slot : s->location;
@@ -1036,7 +1149,7 @@ static void draw(const uint8_t *payload) {
             }
             SKIP(SKIP_FORMAT);
         }
-        const VkDeviceAddress at = vertex_ring.address + range_at[s->range] + s->offset;
+        const VkDeviceAddress at = range_address[s->range] + s->offset;
         inputs[location] = (RecordStream){(uint32_t)at, (uint32_t)(at >> 32), s->stride, code};
     }
     /* Indices, always 32-bit in the frame's index buffer (bound once): fans and quads become
@@ -1299,7 +1412,7 @@ static void present_copy(const Target *display) {
         vkGetImageMemoryRequirements(device, presents[k].image, &need);
         const VkMemoryAllocateInfo allocate = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = need.size,
             .memoryTypeIndex = memory_type(need.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-        CHECK(vkAllocateMemory(device, &allocate, NULL, &presents[k].memory));
+        allocate_image_memory(&allocate, &presents[k].memory);
         CHECK(vkBindImageMemory(device, presents[k].image, presents[k].memory, 0));
         presents[k].width = display->width;
         presents[k].height = display->height;
@@ -1461,6 +1574,7 @@ static void render_frame(NativeList *lists) {
     const uint64_t replay_start = clock_ns();
     wait_ns += replay_start - wait_start;
     CHECK(vkResetFences(device, 1, &frame->fence));
+    targets_collect(frame);
     for (uint32_t i = 0; i < staging_count; ++i) {
         vkDestroyBuffer(device, staging[i].buffer, NULL);
         vkFreeMemory(device, staging[i].memory, NULL);
@@ -1469,6 +1583,7 @@ static void render_frame(NativeList *lists) {
     upload_ring_reset(frame);
     /* Offset 0 of the constants (zeros) is what a shader reads when the game bound nothing. */
     vertex_ring.used = index_ring.used = 0;
+    frame->vertex_chunk = &vertex_ring;
     constants_ring.used = CONSTANT_RANGE;
     cmd = frame->cmd;
     begin_commands(cmd);
@@ -1496,13 +1611,14 @@ static void render_frame(NativeList *lists) {
     static double slow_ms = -1;
     if (slow_ms < 0) { const char *e = getenv("VW_NATIVE_SLOW_LOG"); slow_ms = e ? atof(e) : 0; }
     if (slow_ms > 0) {
-        static uint32_t last_textures, last_targets, last_pipelines;
+        static uint64_t last_textures, last_targets;
+        static uint32_t last_pipelines;
         const double ms = (double)(clock_ns() - wait_start) / 1e6;
         if (ms > slow_ms)
-            printf("Native: slow frame %" PRIu64 ": %.1f ms (GPU wait %.1f, staging alloc %.1f, detile %.1f), new: %u textures (%.1f MiB), %u targets, %u pipelines\n",
-                   frame_number, ms, (double)(replay_start - wait_start) / 1e6, slow_alloc_ns / 1e6, slow_copy_ns / 1e6, texture_count - last_textures,
-                   (double)slow_upload_bytes / (1 << 20), target_count - last_targets, pipeline_count - last_pipelines);
-        last_textures = texture_count, last_targets = target_count, last_pipelines = pipeline_count;
+            printf("Native: slow frame %" PRIu64 ": %.1f ms (GPU wait %.1f, staging alloc %.1f, detile %.1f), new: %" PRIu64 " textures (%.1f MiB), %" PRIu64 " targets, %u pipelines\n",
+                   frame_number, ms, (double)(replay_start - wait_start) / 1e6, slow_alloc_ns / 1e6, slow_copy_ns / 1e6, textures_created - last_textures,
+                   (double)slow_upload_bytes / (1 << 20), targets_created - last_targets, pipeline_count - last_pipelines);
+        last_textures = textures_created, last_targets = targets_created, last_pipelines = pipeline_count;
         slow_upload_bytes = slow_alloc_ns = slow_copy_ns = 0;
     }
     const char *dir = getenv("VW_NATIVE_DUMP_DIR");

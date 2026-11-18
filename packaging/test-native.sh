@@ -15,11 +15,12 @@ for name in "${tests[@]}"; do
     "$directory/$name-test$suffix"
 done
 if [[ $suffix == .exe ]]; then
-    cmake --build "$directory" --target mp3-test videodec-test services-test pad-map-test --parallel 2
+    cmake --build "$directory" --target mp3-test videodec-test services-test pad-map-test native-memory-test --parallel 2
     "$directory/mp3-test.exe" tests/data/sine.mp3
     "$directory/videodec-test.exe" tests/data/tiny.h264
     "$directory/services-test.exe"
     "$directory/pad-map-test.exe"
+    "$directory/native-memory-test.exe"
 else
     export VW_DEPS=$PWD/out/deps/prefix
     bash build.sh --test

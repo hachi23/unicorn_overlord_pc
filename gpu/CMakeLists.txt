@@ -181,6 +181,10 @@ if (WIN32)
 endif()
 
 # Explicit test targets; none launches the game or needs a Vulkan device.
+add_executable(native-memory-test EXCLUDE_FROM_ALL ../tests/test_native_memory.c)
+target_compile_options(native-memory-test PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+target_link_libraries(native-memory-test PRIVATE Vulkan::Vulkan Threads::Threads)
+
 add_executable(png-decode-test EXCLUDE_FROM_ALL ../tests/test_png_decode.cpp platform/vw_png.cpp)
 target_compile_options(png-decode-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(png-decode-test PRIVATE PkgConfig::FFMPEG)
