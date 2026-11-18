@@ -91,9 +91,11 @@ GAMES = {
 def data_dir(game):
     """data/ beside a packaged program (or its .AppImage: the AppImage itself is read-only); in the
     source tree the game's run directory."""
-    beside = Path(os.environ['APPIMAGE']).parent if os.environ.get('APPIMAGE') else HERE
-    default = beside / 'data' if FROZEN else RUNTIME / game['run_dir']
-    return Path(os.environ.get('VW_DATA_DIR', default))
+    if not FROZEN:
+        return Path(os.environ.get('VW_DATA_DIR', RUNTIME / game['run_dir']))
+    appimage = os.environ.get('APPIMAGE')
+    beside = Path(appimage).absolute().parent if appimage else HERE
+    return beside / os.environ.get('VW_DATA_DIR', 'data')
 
 
 def run_role(argv):
@@ -134,7 +136,7 @@ def resolved_path(data, path):
     return str(data.parent / path)
 
 
-def load_settings(data):
+def load_settings(data, game_info=None):
     """launcher.json with its folders made absolute, so the rest of the launcher (and run.py, which
     changes directory) never sees a relative one."""
     try:
@@ -143,6 +145,8 @@ def load_settings(data):
         return {}
     if not isinstance(settings, dict):
         return {}
+    if game_info is not None:
+        migrate_portable_settings(data, settings, game_info)
     for key in PATH_SETTINGS:
         if key in settings:
             settings[key] = resolved_path(data, settings[key])
@@ -156,6 +160,27 @@ def save_settings(data, settings):
     temp = data / 'launcher.json.tmp'  # renamed over it: an interrupted write keeps the old file
     temp.write_text(json.dumps(stored, indent=2), encoding='utf-8')
     os.replace(temp, data / 'launcher.json')
+
+
+def migrate_portable_settings(data, settings, game_info):
+    # The installer always puts its copy in data/game. A relocated legacy config points
+    # to that same layout at the old location, even if the old copy still exists.
+    if not FROZEN or data.name != 'data' or os.environ.get('VW_INSTALL') == '0':
+        return
+    saved = settings.get('game_dir')
+    if not isinstance(saved, str) or not Path(saved).is_absolute():
+        return
+    old = Path(saved)
+    local = data / 'game'
+    if Path(*old.parts[-2:]) != Path('data/game') or not check_game(game_info, local)[0]:
+        return
+    source = settings.get('source_dir')
+    if isinstance(source, str) and Path(source).is_absolute() and Path(source).is_relative_to(old.parent.parent):
+        relocated = data.parent / Path(source).relative_to(old.parent.parent)
+        if relocated == local or check_game(game_info, relocated)[0]:
+            settings['source_dir'] = str(relocated)
+    settings['game_dir'] = str(local)
+    save_settings(data, settings)
 
 
 def check_game(game_info, folder):
@@ -818,7 +843,7 @@ def export_text(game_info, data, out):
     (scripts/fms.py; default data/mods/My translation), from the archive the text language binds."""
     import fms
     from tkinter import messagebox
-    settings = load_settings(data)
+    settings = load_settings(data, game_info)
     folder = Path(out[0]) if out else data / 'mods' / 'My translation'
     archive = 'Unicorn_CN.CPK' if settings.get('text_language') == 'simplified_chinese' else 'Unicorn_TW.CPK'
     root = tk_root()
@@ -929,7 +954,7 @@ def main(key):
     if '--export-diagnostics' in args:  # also while the game hangs: run a second copy with it
         root = tk_root()
         try:
-            export_diagnostics(root, data, load_settings(data).get('game_dir', ''))
+            export_diagnostics(root, data, load_settings(data, game_info).get('game_dir', ''))
         finally:
             root.destroy()
         sys.exit(0)
@@ -940,7 +965,7 @@ def main(key):
         sys.exit(import_switch_saves(data, args[0]))
     if '--export-text' in args:
         sys.exit(export_text(game_info, data, args[args.index('--export-text') + 1:][:1]))
-    settings = load_settings(data)
+    settings = load_settings(data, game_info)
     folder = settings.get('game_dir')
     if '--choose-game' in args or not check_game(game_info, folder)[0]:
         chosen = choose_game(game_info, settings.get('source_dir', folder), settings.get('dump'),
