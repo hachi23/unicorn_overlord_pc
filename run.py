@@ -221,6 +221,15 @@ def main():
     if restarted:
         wait_for(int(args[1]))
         args = args[2:]
+    sys.path.insert(0, str(PORT / 'scripts'))
+    # A packaged program takes relative VW_GAME_DIR / VW_DATA_DIR from its own folder, so they
+    # survive the chdir below and a copy of the program folder keeps working where it is moved.
+    if getattr(sys, 'frozen', False):
+        from portable_paths import program_root
+        beside = program_root(Path(sys.executable).resolve().parent, os.environ.get('APPIMAGE'))
+        for key in ('VW_GAME_DIR', 'VW_DATA_DIR'):
+            if os.environ.get(key) and not Path(os.environ[key]).is_absolute():
+                os.environ[key] = str((beside / os.environ[key]).resolve())
     # Relative paths (VW_GAME_DIR, VW_DATA_DIR) are from the port.
     os.chdir(PORT)
     env = os.environ
@@ -236,7 +245,6 @@ def main():
     for key in env.pop('VW_DERIVED', '').split(','):
         env.pop(key, None)
     derived = []
-    sys.path.insert(0, str(PORT / 'scripts'))
     import graphics_options
     import diagnostics
     graphics, reverted = graphics_options.prepare(env['VW_CONFIG'], out / 'graphics_state.json', restarted)
