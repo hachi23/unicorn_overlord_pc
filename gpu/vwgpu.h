@@ -38,6 +38,8 @@ int vwgpu_overlay_captures_input(void);
 /* The battle map cursor follows the mouse this frame: the window hides the system pointer
  * over it for a moment (src/unicorn_mouse.h). Any thread. */
 void vwgpu_mouse_map_active(void);
+/* Whether the presenter stretched the current game image to fill the window. */
+int vwgpu_image_stretched(void);
 /* A text setting of vw.ini ("key_map", "pad_map"): 1 and the value in out when it is set. */
 int vwgpu_setting_text(const char *key, char *out, uint64_t size);
 /* The sticks' dead zone in percent of their travel (vw.ini stick_dead_zone). */

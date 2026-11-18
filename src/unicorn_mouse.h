@@ -120,31 +120,36 @@ __attribute__((used)) void ABI unicorn_cursor_after(unsigned char *object) {
         }
     }
     if (dx == 0 && dy == 0) return;
-    /* The cursor goes where the camera shows it moved by the mouse's motion on screen. The game
-     * image is letterboxed in the window at the camera's aspect ratio. */
+    /* The input and window size are both in SDL points, including on high-DPI displays. */
+    const int stretched = vwgpu_image_stretched();
     float wx = 0, wz = 0;
     View view;
     float screen_x, screen_y;
     Vec3 to;
     int exact = camera_view(&view);
+    float image_w = (float)window_w, image_h = (float)window_h;
     if (exact) {
         const float aspect = SDL_sqrtf(v_dot(view.right, view.right) / v_dot(view.down, view.down));
-        float image_h = (float)window_h;
-        if ((float)window_w / aspect < image_h) image_h = (float)window_w / aspect;
+        if (!stretched) {
+            if (image_w / aspect < image_h) image_h = image_w / aspect;
+            image_w = image_h * aspect;
+        }
         const Vec3 at = {p[0], p[1], p[2]};
         exact = view_project(&view, at, &screen_x, &screen_y) &&
-                view_ground(&view, screen_x + dx / (image_h * aspect), screen_y + dy / image_h, p[1], &to);
+                view_ground(&view, screen_x + dx / image_w, screen_y + dy / image_h, p[1], &to);
         if (exact) wx = to.x - p[0], wz = to.z - p[2];
     }
     if (!exact) {
         /* World units per window height at the first battle map's default zoom. */
-        wx = dx / (float)window_h * 925.0f, wz = dy / (float)window_h * 1630.0f;
+        wx = stretched ? dx / window_w * (925.0f * (16.0f / 9.0f)) : dx / window_h * 925.0f;
+        wz = dy / window_h * 1630.0f;
     }
     p[0] += wx, p[2] += wz;
     previous[0] += wx, previous[2] += wz;
     watch_frames = 4, placed_at[0] = p[0], placed_at[1] = p[2], moved_dir[0] = dx, moved_dir[1] = dy;
     if (cursor_debug)
-        printf("Mouse: moved %.0f %.0f points (%s) -> cursor %.1f %.1f\n", dx, dy, exact ? "camera" : "estimate", p[0], p[2]);
+        printf("Mouse: moved %.0f %.0f points (%s, %.0fx%.0f view) -> cursor %.1f %.1f\n",
+               dx, dy, exact ? "camera" : "estimate", image_w, image_h, p[0], p[2]);
 }
 
 /* Entry: rsp = 8 (mod 16). Keeps rdi (the object), calls the game's method, then the C side
