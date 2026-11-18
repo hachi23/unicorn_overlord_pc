@@ -15,6 +15,12 @@ newest 10 kept), `last_run.log` (live copy of the newest log segment). Each run 
 two 8 MiB segments (`.log` and `.log.1`) and a small system summary (`.json`). Saves are backed up automatically
 before each start.
 
+`launcher.json` keeps `game_dir` and `source_dir` relative to the program folder when they are inside it
+(`data/game`), so the program folder can be moved or copied to another drive and still finds its game.
+A relative path there is always read from the program folder, whatever directory the program is started from.
+An older setting pointing to an installed data/game copy is updated at launch when the moved program
+has a valid data/game folder. On Linux, the program folder is the folder containing the AppImage.
+
 ## Setup refuses the game folder
 
 - The folder must contain `eboot.bin`, `sce_module/` and `sce_sys/` directly.

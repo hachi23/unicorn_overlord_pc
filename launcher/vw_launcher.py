@@ -91,9 +91,9 @@ GAMES = {
 def data_dir(game):
     """data/ beside a packaged program (or its .AppImage: the AppImage itself is read-only); in the
     source tree the game's run directory."""
-    beside = Path(os.environ['APPIMAGE']).parent if os.environ.get('APPIMAGE') else HERE
-    default = beside / 'data' if FROZEN else RUNTIME / game['run_dir']
-    return Path(os.environ.get('VW_DATA_DIR', default))
+    if not FROZEN:
+        return Path(os.environ.get('VW_DATA_DIR', RUNTIME / game['run_dir']))
+    return packaged_root() / os.environ.get('VW_DATA_DIR', 'data')
 
 
 def run_role(argv):
@@ -108,20 +108,95 @@ def run_role(argv):
 
 sys.path.insert(0, str(RUNTIME / 'scripts'))
 from patches import eboot_supported, game_app_version, game_title_id  # noqa: E402
+from portable_paths import program_root  # noqa: E402
 
 
-def load_settings(data):
+def packaged_root():
+    return program_root(HERE, os.environ.get('APPIMAGE'))
+
+
+PATH_SETTINGS = ('source_dir', 'game_dir')  # folders launcher.json keeps
+
+
+def stored_path(path):
+    """A folder as launcher.json keeps it: relative to the program's folder (the one holding
+    data/), with forward slashes, when it is inside it, so the whole folder can be moved or copied
+    (a USB drive, another PC) and still finds its game. Any other folder stays absolute. From the
+    source tree (run directory inside the repository) paths are kept as they are."""
+    if not FROZEN or not isinstance(path, str) or not path or not Path(path).is_absolute():
+        return path
     try:
-        return json.loads((data / 'launcher.json').read_text(encoding='utf-8'))
+        return Path(path).resolve().relative_to(packaged_root().resolve()).as_posix()
+    except (OSError, ValueError):
+        return path
+
+
+def resolved_path(path):
+    """The inverse of stored_path: a relative folder in launcher.json is from the program's folder,
+    not from the current directory (a shortcut, a launcher or a terminal can start it anywhere)."""
+    if not FROZEN or not isinstance(path, str) or not path or Path(path).is_absolute():
+        return path
+    return str(packaged_root() / path)
+
+
+def load_settings(data, game_info=None, *, persist_migration=False):
+    """launcher.json with its folders made absolute, so the rest of the launcher (and run.py, which
+    changes directory) never sees a relative one."""
+    try:
+        settings = json.loads((data / 'launcher.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
+    if not isinstance(settings, dict):
+        return {}
+    migrated = game_info is not None and migrate_portable_settings(data, settings, game_info)
+    if migrated and persist_migration:
+        try:
+            save_settings(data, settings)
+        except OSError as error:
+            print(f'Cannot save migrated launcher settings: {error}', file=sys.stderr)
+    for key in PATH_SETTINGS:
+        if key in settings:
+            settings[key] = resolved_path(settings[key])
+    return settings
 
 
 def save_settings(data, settings):
     data.mkdir(parents=True, exist_ok=True)
+    stored = {key: stored_path(value) if key in PATH_SETTINGS else value
+              for key, value in settings.items()}
     temp = data / 'launcher.json.tmp'  # renamed over it: an interrupted write keeps the old file
-    temp.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    temp.write_text(json.dumps(stored, indent=2), encoding='utf-8')
     os.replace(temp, data / 'launcher.json')
+
+
+def migrate_portable_settings(data, settings, game_info):
+    if not FROZEN or os.environ.get('VW_INSTALL') == '0':
+        return False
+    saved = settings.get('game_dir')
+    if not isinstance(saved, str) or not Path(saved).is_absolute():
+        return False
+    root = packaged_root().resolve()
+    old = Path(saved)
+    local = data.resolve() / 'game'
+    if not local.is_relative_to(root):
+        return False
+    # Rebase an installed copy only when the old path has the same layout and the local dump works.
+    suffix = local.relative_to(root)
+    depth = len(suffix.parts)
+    if depth < 2 or Path(*old.parts[-depth:]) != suffix or not check_game(game_info, local)[0]:
+        return False
+    # An existing standalone dump may also be named data/game. A launcher config beside
+    # that dump indicates a prior install. A moved installation can have no old directory.
+    if old != local and old.is_dir() and not (old.parent / 'launcher.json').is_file():
+        return False
+    old_root = old.parents[depth - 1]
+    source = settings.get('source_dir')
+    if isinstance(source, str) and Path(source).is_absolute() and Path(source).is_relative_to(old_root):
+        relocated = root / Path(source).relative_to(old_root)
+        if relocated == local or check_game(game_info, relocated)[0]:
+            settings['source_dir'] = str(relocated)
+    settings['game_dir'] = str(local)
+    return True
 
 
 def check_game(game_info, folder):
@@ -784,7 +859,7 @@ def export_text(game_info, data, out):
     (scripts/fms.py; default data/mods/My translation), from the archive the text language binds."""
     import fms
     from tkinter import messagebox
-    settings = load_settings(data)
+    settings = load_settings(data, game_info)
     folder = Path(out[0]) if out else data / 'mods' / 'My translation'
     archive = 'Unicorn_CN.CPK' if settings.get('text_language') == 'simplified_chinese' else 'Unicorn_TW.CPK'
     root = tk_root()
@@ -895,7 +970,7 @@ def main(key):
     if '--export-diagnostics' in args:  # also while the game hangs: run a second copy with it
         root = tk_root()
         try:
-            export_diagnostics(root, data, load_settings(data).get('game_dir', ''))
+            export_diagnostics(root, data, load_settings(data, game_info).get('game_dir', ''))
         finally:
             root.destroy()
         sys.exit(0)
@@ -906,7 +981,7 @@ def main(key):
         sys.exit(import_switch_saves(data, args[0]))
     if '--export-text' in args:
         sys.exit(export_text(game_info, data, args[args.index('--export-text') + 1:][:1]))
-    settings = load_settings(data)
+    settings = load_settings(data, game_info, persist_migration=True)
     folder = settings.get('game_dir')
     if '--choose-game' in args or not check_game(game_info, folder)[0]:
         chosen = choose_game(game_info, settings.get('source_dir', folder), settings.get('dump'),
