@@ -2,8 +2,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import paths  # noqa: F401  (puts scripts/ on sys.path)
+import mods
 import prepare_cache
 
 
@@ -50,9 +52,10 @@ class PrepareCacheTest(unittest.TestCase):
         prepare_cache.store(self.out, self.key())
         view = Path(self.temp.name) / 'mod-game-1234'
         view.mkdir()
-        for entry in self.game.iterdir():
-            if entry.name != 'Unicorn_TW.CPK':
-                (view / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+        with patch.dict(mods.LINKED):
+            for entry in self.game.iterdir():
+                if entry.name != 'Unicorn_TW.CPK':
+                    mods.make_link(view / entry.name, entry)
         (view / 'Unicorn_US.CPK').write_bytes(b'english, written at this start')
         self.assertTrue(prepare_cache.valid(self.out, prepare_cache.key(view, self.scripts, 'full')))
         (self.game / 'eboot.bin').write_bytes(b'another eboot')
