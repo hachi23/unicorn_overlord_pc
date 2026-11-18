@@ -359,6 +359,10 @@ This port stands on the work of others. In order of descent:
 - **rufaswan**: [Web2D_Games](https://github.com/rufaswan/Web2D_Games), whose notes on
   Vanillaware's sprite files (FMBS) made the Xbox and Nintendo button icons possible.
 
+
+- **[XexuWilder](https://github.com/XexuWilder)** submitted portable launcher paths in [#116](https://github.com/hachi23/unicorn_overlord_pc/pull/116).
+- **[CozyM3dia](https://github.com/CozyM3dia)** submitted the native renderer’s Screen fit option in [#118](https://github.com/hachi23/unicorn_overlord_pc/pull/118).
+
 Libraries and tools used:
 
 | What | Used for |
