@@ -164,6 +164,10 @@ extern "C" int vwgpu_overlay_captures_input(void) {
     return VwOverlay::CapturesInput() ? 1 : 0;
 }
 
+extern "C" int vwgpu_image_stretched(void) {
+    return VwSettings::Get().image_stretched.load();
+}
+
 extern "C" void vwgpu_mouse_map_active(void) {
     Frontend::MouseMapActive();
 }

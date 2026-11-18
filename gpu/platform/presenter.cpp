@@ -657,14 +657,10 @@ bool UpdateSwapchain(bool force) {
     return true;
 }
 
-/// The frame size for the swapchain: the game's aspect ratio fitted into it.
-VkExtent2D FrameSize(VkExtent2D target) {
-    VkExtent2D size = target;
-    if (float(target.width) / float(target.height) > game_ratio)
-        size.width = u32(float(target.height) * game_ratio);
-    else
-        size.height = u32(float(target.width) / game_ratio);
-    return {std::max(size.width, 1u), std::max(size.height, 1u)};
+/// The frame size for the swapchain according to `screen_fit` (fit or stretch).
+VkExtent2D FrameSize(VkExtent2D target, int screen_fit) {
+    const VwGraphics::Size s = VwGraphics::FrameSize(int(target.width), int(target.height), game_ratio, screen_fit);
+    return {u32(s.w), u32(s.h)};
 }
 
 VkImageView NativeView(VkImage image, bool srgb) {
@@ -686,19 +682,19 @@ VkImageView NativeView(VkImage image, bool srgb) {
 }
 
 /// Records the passes from the game's image into `frame`.
-void DrawFrame(VkCommandBuffer cmd, VkImage image, u32 width, u32 height, DisplayFormat format) {
+void DrawFrame(VkCommandBuffer cmd, VkImage image, u32 width, u32 height, DisplayFormat format, int fit) {
     const bool srgb = format == DisplayFormat::Srgb;
     VkImageView view = NativeView(image, srgb);
     VkExtent2D size{width, height};
     game_ratio = float(width) / float(height);
-    const VkExtent2D frame_size = FrameSize(swapchain.extent);
+    auto& s = VwSettings::Get();
+    const VkExtent2D frame_size = FrameSize(swapchain.extent, fit);
     if (frame.width != frame_size.width || frame.height != frame_size.height) {
         if (frame.image) WaitIdle();
         DestroyImage(frame);
         frame = CreateImage(frame_size.width, frame_size.height, FrameFormat,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     }
-    auto& s = VwSettings::Get();
     const VkExtent2D game_size = size;
     view = anime4k.Render(cmd, view, size, frame_size, s.anime4k, srgb);
     const bool fsr1 = s.fsr1, rcas = s.rcas;
@@ -799,7 +795,8 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
     vkBeginCommandBuffer(cmd, &begin);
 
     static const char* dump_trigger = std::getenv("VW_FRAME_DUMP_TRIGGER");
-    if (image) DrawFrame(cmd, image, width, height, format);
+    const int fit = VwSettings::Get().screen_fit.load();
+    if (image) DrawFrame(cmd, image, width, height, format, fit);
     else if (draw) frame_valid = false;
     const bool dump = image && dump_trigger && std::remove(dump_trigger) == 0;
     Dump dumped;
@@ -814,17 +811,25 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
     if (frame_valid) {
         MemoryBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-        // Letterboxed at the frame's own aspect ratio.
         const VkExtent2D e = swapchain.extent;
-        const float frame_aspect = float(frame.width) / float(frame.height);
-        u32 w = e.width, h = e.height;
-        if (frame_aspect > float(e.width) / float(e.height)) h = u32(float(e.width) / frame_aspect);
-        else w = u32(float(e.height) * frame_aspect);
-        const s32 x = s32(e.width - w) / 2, y = s32(e.height - h) / 2;
-        const VkImageBlit blit{.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                               .srcOffsets = {{0, 0, 0}, {s32(frame.width), s32(frame.height), 1}},
-                               .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                               .dstOffsets = {{x, y, 0}, {x + s32(w), y + s32(h), 1}}};
+        VkImageBlit blit{};
+        if (fit == VwGraphics::ScreenFitStretch) {
+            blit = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                    .srcOffsets = {{0, 0, 0}, {s32(frame.width), s32(frame.height), 1}},
+                    .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                    .dstOffsets = {{0, 0, 0}, {s32(e.width), s32(e.height), 1}}};
+        } else {
+            // Letterboxed at the frame's own aspect ratio.
+            const float frame_aspect = float(frame.width) / float(frame.height);
+            u32 w = e.width, h = e.height;
+            if (frame_aspect > float(e.width) / float(e.height)) h = u32(float(e.width) / frame_aspect);
+            else w = u32(float(e.height) * frame_aspect);
+            const s32 x = s32(e.width - w) / 2, y = s32(e.height - h) / 2;
+            blit = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                    .srcOffsets = {{0, 0, 0}, {s32(frame.width), s32(frame.height), 1}},
+                    .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                    .dstOffsets = {{x, y, 0}, {x + s32(w), y + s32(h), 1}}};
+        }
         vkCmdBlitImage(cmd, frame.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
     }
@@ -866,6 +871,8 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
         Check(vkQueueSubmit(vk.queue, 1, &submit, slot.done), "present submit");
         presented = vkQueuePresentKHR(vk.queue, &present);
     }
+    if (presented == VK_SUCCESS || presented == VK_SUBOPTIMAL_KHR)
+        VwSettings::Get().image_stretched = frame_valid && fit == VwGraphics::ScreenFitStretch;
     if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR) UpdateSwapchain(true);
     if (dump) WriteDump(dumped, slot.done);
 }

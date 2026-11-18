@@ -278,6 +278,9 @@ void ImageTab() {
     if (BeginRows("##display")) {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
                   "Windowed, borderless window or exclusive fullscreen.");
+        ChoiceRow("Screen fit", s.screen_fit, G::ScreenFitNames.data(), nullptr, G::ScreenFitCount,
+                  "How the game fits a screen of another shape (such as 16:10): Fit keeps aspect with bars, "
+                  "Stretch fills the whole screen without cropping.");
         ImGui::BeginDisabled(s.display_mode != G::Windowed);
         ChoiceRow("Window size", s.window_size, G::WindowSizeNames.data(), nullptr, int(G::WindowSizes.size()),
                   "The window's size in Windowed mode. Fit screen is the largest that fits your screen; a "

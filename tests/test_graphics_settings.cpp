@@ -50,6 +50,14 @@ int main() {
     }
     assert(G::ParseFpsLimit(30) == 30 && G::ParseFpsLimit(40) == 40 && G::ParseFpsLimit(0) == 0);
     assert(G::ParseFpsLimit(240) == 0 && G::ParseFpsLimit(-5) == 0 && G::ParseFpsLimit(35) == 0);
+    assert(G::ParseScreenFit("fit") == G::ScreenFitFit &&
+           G::ParseScreenFit("stretch") == G::ScreenFitStretch && G::ParseScreenFit("bogus") == G::ScreenFitFit);
+    {
+        const G::Size fit = G::FrameSize(1920, 1200, 16.0f / 9.0f, G::ScreenFitFit);
+        const G::Size stretch = G::FrameSize(1920, 1200, 16.0f / 9.0f, G::ScreenFitStretch);
+        assert(fit.w == 1920 && fit.h == 1080);
+        assert(stretch.w == 1920 && stretch.h == 1200);
+    }
     assert(G::ParseAnime4k(2) == G::Anime4kQuality && G::ParseAnime4k(3) == G::Anime4kOff && G::ParseAnime4k(-1) == 0);
     // Anime4K's x2 runs above 1.2 times both ways: 1080p to 1440p, not 1080p to 1200p or 1080p.
     assert(G::Anime4kUpscales(1920, 1080, 2560, 1440) && G::Anime4kUpscales(1280, 720, 1920, 1080));
@@ -61,15 +69,16 @@ int main() {
         std::ofstream out(path);
         // renderer= picks the game executable; the shadPS4 renderer's own keys (async_shaders,
         // deferred_readback, ...) are kept unchanged for it.
-        out << "display_mode=borderless\nvsync=0\nfps_limit=240\nasync_shaders=0\nrenderer=shadps4\n"
+        out << "display_mode=borderless\nscreen_fit=stretch\nvsync=0\nfps_limit=240\nasync_shaders=0\nrenderer=shadps4\n"
                "render_resolution=1800p\naspect_ratio=21:9\ndeferred_readback=0\nstale_readback=1\n"
                "fsr1=1\nanime4k=1\nrcas=0\nrcas_strength=40\nframes_queued=2\ntext_language=simplified_chinese\n";
     }
     _putenv_s("VW_CONFIG", path);
     _putenv_s("VW_VSYNC", "");
+    _putenv_s("VW_SCREEN_FIT", "");
     auto& v = VwSettings::Get();
     VwSettings::Load();
-    assert(v.display_mode == G::Borderless && !v.vsync);
+    assert(v.display_mode == G::Borderless && v.screen_fit == G::ScreenFitStretch && !v.vsync);
     assert(v.render_resolution == 3 && v.aspect_ratio == 1);
     assert(v.fsr1 && !v.rcas && v.rcas_strength == 40);
     assert(v.anime4k == G::Anime4kFast);
@@ -92,7 +101,7 @@ int main() {
 
     VwSettings::Save();
     const std::string saved = Read(path);
-    for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "render_resolution=1800p\n",
+    for (const char* line : {"display_mode=borderless\n", "screen_fit=stretch\n", "vsync=0\n", "render_resolution=1800p\n",
                              "aspect_ratio=21:9\n", "fsr1=1\n", "anime4k=1\n", "rcas=0\n", "rcas_strength=40\n",
                              "text_language=simplified_chinese\n", "renderer=shadps4\n", "async_shaders=0\n",
                              "deferred_readback=0\n", "stale_readback=1\n", "frames_queued=2\n"}) {
@@ -120,8 +129,10 @@ int main() {
                "rcas_strength=250\nanime4k=7\nvsync=0\n";
     }
     _putenv_s("VW_VSYNC", "1");  // the environment still wins at start
+    _putenv_s("VW_SCREEN_FIT", "stretch");
     VwSettings::Load();
     assert(v.display_mode == G::Windowed && v.render_resolution == 0 && v.aspect_ratio == 0);
+    assert(v.screen_fit == G::ScreenFitStretch);
     assert(v.rcas_strength == 75 && v.anime4k == G::Anime4kOff);
     assert(v.fps_limit == 0);  // 7 is not one of the choices
     assert(v.vsync);
