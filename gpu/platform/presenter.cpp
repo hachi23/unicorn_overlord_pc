@@ -10,6 +10,7 @@
 // renderer's copy into the display image was submitted before the flip that shows it.
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -25,6 +26,7 @@
 #include "shaders/fullscreen_vert.h"
 #include "shaders/present_frag.h"
 #include "vw_graphics.h"
+#include "../vwgpu.h"
 #include "vw_overlay.h"
 #include "vw_settings.h"
 
@@ -636,6 +638,7 @@ std::array<Slot, InFlight> slots;
 u32 slot_index;
 Image frame;          // the last game frame at window aspect (TRANSFER_SRC_OPTIMAL once drawn)
 bool frame_valid;     // frame holds a game image
+std::atomic<VwImageSize> presented_image_coverage{VwImageSize{}};
 float game_ratio = 16.0f / 9.0f;
 std::unordered_map<u64, VkImageView> native_views;
 
@@ -808,6 +811,7 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
             VK_ACCESS_2_TRANSFER_WRITE_BIT);
     const VkClearColorValue black{{0.0f, 0.0f, 0.0f, 1.0f}};
     vkCmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &Color);
+    VwImageSize coverage{};
     if (frame_valid) {
         MemoryBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
@@ -830,6 +834,9 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
                     .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
                     .dstOffsets = {{x, y, 0}, {x + s32(w), y + s32(h), 1}}};
         }
+        coverage = vw_image_coverage(blit.dstOffsets[1].x - blit.dstOffsets[0].x,
+                                     blit.dstOffsets[1].y - blit.dstOffsets[0].y,
+                                     int(e.width), int(e.height));
         vkCmdBlitImage(cmd, frame.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
     }
@@ -872,7 +879,7 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
         presented = vkQueuePresentKHR(vk.queue, &present);
     }
     if (presented == VK_SUCCESS || presented == VK_SUBOPTIMAL_KHR)
-        VwSettings::Get().image_stretched = frame_valid && fit == VwGraphics::ScreenFitStretch;
+        presented_image_coverage.store(coverage, std::memory_order_relaxed);
     if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR) UpdateSwapchain(true);
     if (dump) WriteDump(dumped, slot.done);
 }
@@ -916,3 +923,7 @@ void PresentAgain() {
 }
 
 } // namespace Platform
+
+extern "C" VwImageSize vwgpu_presented_image_coverage(void) {
+    return Platform::presented_image_coverage.load(std::memory_order_relaxed);
+}

@@ -58,6 +58,22 @@ int main() {
         assert(fit.w == 1920 && fit.h == 1080);
         assert(stretch.w == 1920 && stretch.h == 1200);
     }
+    {
+        // Vulkan dimensions are physical pixels; SDL reports logical window points at high DPI.
+        const auto fit = vw_image_coverage(1920, 1080, 1920, 1200);
+        const auto stretch = vw_image_coverage(1920, 1200, 1920, 1200);
+        const auto wide = vw_image_coverage(1920, 1080, 2560, 1080);
+        const auto empty = vw_image_coverage(0, 0, 1920, 1200);
+        const auto fit_points = vw_image_logical_size(fit, 1280, 800);
+        const auto stretch_points = vw_image_logical_size(stretch, 1280, 800);
+        const auto wide_points = vw_image_logical_size(wide, 2560, 1080);
+        const auto resized = vw_image_logical_size(fit, 1600, 1000);
+        assert(fit_points.width == 1280 && fit_points.height == 720);
+        assert(stretch_points.width == 1280 && stretch_points.height == 800);
+        assert(wide_points.width == 1920 && wide_points.height == 1080);
+        assert(resized.width == 1600 && resized.height == 900);
+        assert(empty.width == 0 && empty.height == 0);
+    }
     assert(G::ParseAnime4k(2) == G::Anime4kQuality && G::ParseAnime4k(3) == G::Anime4kOff && G::ParseAnime4k(-1) == 0);
     // Anime4K's x2 runs above 1.2 times both ways: 1080p to 1440p, not 1080p to 1200p or 1080p.
     assert(G::Anime4kUpscales(1920, 1080, 2560, 1440) && G::Anime4kUpscales(1280, 720, 1920, 1080));
