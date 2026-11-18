@@ -73,7 +73,7 @@ class PortableSettings(unittest.TestCase):
             config = data / 'launcher.json'
             config.write_text(json.dumps({'game_dir': str(old), 'source_dir': str(old)}), encoding='utf-8')
             with mock.patch.object(vw_launcher, 'check_game', return_value=(True, '')):
-                settings = vw_launcher.load_settings(data, game_info)
+                settings = vw_launcher.load_settings(data, game_info, persist_migration=True)
             self.assertEqual(Path(settings['game_dir']), local)
             self.assertEqual(json.loads(config.read_text(encoding='utf-8')),
                              {'game_dir': suffix.as_posix(), 'source_dir': suffix.as_posix()})
@@ -88,17 +88,53 @@ class PortableSettings(unittest.TestCase):
         old = self.program.with_name('Old') / 'data' / 'game'
         local = self.data / 'game'
         dump = str(self.program.with_name('External') / 'CUSA36381')
+        old.mkdir(parents=True)
+        (old.parent / 'launcher.json').write_text('{}', encoding='utf-8')
         self.data.mkdir(parents=True)
         (self.data / 'launcher.json').write_text(
             json.dumps({'game_dir': str(old), 'source_dir': dump, 'english_mode': 1}), encoding='utf-8')
         with mock.patch.dict(os.environ, {'VW_INSTALL': '1'}), \
                 mock.patch.object(vw_launcher, 'check_game', return_value=(True, '')) as validate:
-            settings = vw_launcher.load_settings(self.data, vw_launcher.GAMES['unicorn'])
+            settings = vw_launcher.load_settings(self.data, vw_launcher.GAMES['unicorn'], persist_migration=True)
             validate.assert_called_once_with(vw_launcher.GAMES['unicorn'], local)
             self.assertEqual(vw_launcher.load_settings(self.data, vw_launcher.GAMES['unicorn']), settings)
             self.assertEqual(validate.call_count, 1)
         self.assertEqual(settings['game_dir'], str(local))
         self.assertEqual(self.written(), {'game_dir': 'data/game', 'source_dir': dump, 'english_mode': 1})
+
+    def test_diagnostics_uses_relocated_path_without_writing_settings(self):
+        from types import SimpleNamespace
+
+        old = self.program.with_name('Old') / 'data' / 'game'
+        local = self.data / 'game'
+        self.data.mkdir(parents=True)
+        config = {'game_dir': str(old)}
+        (self.data / 'launcher.json').write_text(json.dumps(config), encoding='utf-8')
+        root = SimpleNamespace(destroy=mock.Mock())
+        env = {'VW_DATA_DIR': str(self.data), 'APPIMAGE': '', 'VW_INSTALL': '1'}
+        with mock.patch.dict(os.environ, env), mock.patch.object(sys, 'argv', ['launcher', '--export-diagnostics']), \
+                mock.patch.object(vw_launcher, 'tk_root', return_value=root), \
+                mock.patch.object(vw_launcher, 'export_diagnostics') as export, \
+                mock.patch.object(vw_launcher, 'check_game', return_value=(True, '')):
+            with self.assertRaises(SystemExit) as stop:
+                vw_launcher.main('unicorn')
+        self.assertEqual(stop.exception.code, 0)
+        export.assert_called_once_with(root, self.data, str(local))
+        self.assertEqual(self.written(), config)
+
+    def test_migration_write_failure_keeps_the_relocated_path(self):
+        old = self.program.with_name('Old') / 'data' / 'game'
+        local = self.data / 'game'
+        self.data.mkdir(parents=True)
+        config = {'game_dir': str(old)}
+        (self.data / 'launcher.json').write_text(json.dumps(config), encoding='utf-8')
+        with mock.patch.dict(os.environ, {'VW_INSTALL': '1'}), \
+                mock.patch.object(vw_launcher, 'check_game', return_value=(True, '')), \
+                mock.patch.object(vw_launcher, 'save_settings', side_effect=PermissionError('read-only config')) as save:
+            settings = vw_launcher.load_settings(self.data, vw_launcher.GAMES['unicorn'], persist_migration=True)
+        save.assert_called_once()
+        self.assertEqual(settings['game_dir'], str(local))
+        self.assertEqual(self.written(), config)
 
     def test_invalid_local_install_leaves_legacy_config_untouched(self):
         old = self.program.with_name('Old') / 'data' / 'game'
@@ -117,6 +153,18 @@ class PortableSettings(unittest.TestCase):
             settings = vw_launcher.load_settings(self.data, vw_launcher.GAMES['unicorn'])
         validate.assert_not_called()
         self.assertEqual(settings['game_dir'], external)
+
+    def test_external_dump_with_managed_suffix_stays_external(self):
+        external = self.program.with_name('External') / 'data' / 'game'
+        external.mkdir(parents=True)
+        self.data.mkdir(parents=True)
+        config = {'game_dir': str(external), 'source_dir': str(external)}
+        (self.data / 'launcher.json').write_text(json.dumps(config), encoding='utf-8')
+        with mock.patch.dict(os.environ, {'VW_INSTALL': '1'}), \
+                mock.patch.object(vw_launcher, 'check_game', return_value=(True, '')):
+            settings = vw_launcher.load_settings(self.data, vw_launcher.GAMES['unicorn'])
+        self.assertEqual(settings, config)
+        self.assertEqual(self.written(), config)
 
     def test_appimage_anchors_relative_paths_outside_the_mount(self):
         class BeforeChdir(Exception):

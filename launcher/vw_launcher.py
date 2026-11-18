@@ -139,7 +139,7 @@ def resolved_path(path):
     return str(packaged_root() / path)
 
 
-def load_settings(data, game_info=None):
+def load_settings(data, game_info=None, *, persist_migration=False):
     """launcher.json with its folders made absolute, so the rest of the launcher (and run.py, which
     changes directory) never sees a relative one."""
     try:
@@ -148,8 +148,12 @@ def load_settings(data, game_info=None):
         return {}
     if not isinstance(settings, dict):
         return {}
-    if game_info is not None:
-        migrate_portable_settings(data, settings, game_info)
+    migrated = game_info is not None and migrate_portable_settings(data, settings, game_info)
+    if migrated and persist_migration:
+        try:
+            save_settings(data, settings)
+        except OSError as error:
+            print(f'Cannot save migrated launcher settings: {error}', file=sys.stderr)
     for key in PATH_SETTINGS:
         if key in settings:
             settings[key] = resolved_path(settings[key])
@@ -167,20 +171,24 @@ def save_settings(data, settings):
 
 def migrate_portable_settings(data, settings, game_info):
     if not FROZEN or os.environ.get('VW_INSTALL') == '0':
-        return
+        return False
     saved = settings.get('game_dir')
     if not isinstance(saved, str) or not Path(saved).is_absolute():
-        return
+        return False
     root = packaged_root().resolve()
     old = Path(saved)
     local = data.resolve() / 'game'
     if not local.is_relative_to(root):
-        return
+        return False
     # Rebase an installed copy only when the old path has the same layout and the local dump works.
     suffix = local.relative_to(root)
     depth = len(suffix.parts)
     if depth < 2 or Path(*old.parts[-depth:]) != suffix or not check_game(game_info, local)[0]:
-        return
+        return False
+    # An existing standalone dump may also be named data/game. A launcher config beside
+    # that dump indicates a prior install. A moved installation can have no old directory.
+    if old != local and old.is_dir() and not (old.parent / 'launcher.json').is_file():
+        return False
     old_root = old.parents[depth - 1]
     source = settings.get('source_dir')
     if isinstance(source, str) and Path(source).is_absolute() and Path(source).is_relative_to(old_root):
@@ -188,7 +196,7 @@ def migrate_portable_settings(data, settings, game_info):
         if relocated == local or check_game(game_info, relocated)[0]:
             settings['source_dir'] = str(relocated)
     settings['game_dir'] = str(local)
-    save_settings(data, settings)
+    return True
 
 
 def check_game(game_info, folder):
@@ -973,7 +981,7 @@ def main(key):
         sys.exit(import_switch_saves(data, args[0]))
     if '--export-text' in args:
         sys.exit(export_text(game_info, data, args[args.index('--export-text') + 1:][:1]))
-    settings = load_settings(data, game_info)
+    settings = load_settings(data, game_info, persist_migration=True)
     folder = settings.get('game_dir')
     if '--choose-game' in args or not check_game(game_info, folder)[0]:
         chosen = choose_game(game_info, settings.get('source_dir', folder), settings.get('dump'),
