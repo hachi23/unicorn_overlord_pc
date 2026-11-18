@@ -59,6 +59,16 @@ int main() {
         assert(stretch.w == 1920 && stretch.h == 1200);
     }
     {
+        // PresentAgain can still hold a 1920x1200 Stretch frame when the mode changes to Fit.
+        const float game_ratio = 16.0f / 9.0f;
+        const auto stretch = G::PresentRect(1920, 1200, game_ratio, G::ScreenFitStretch);
+        const auto fit = G::PresentRect(1920, 1200, game_ratio, G::ScreenFitFit);
+        assert(stretch.x == 0 && stretch.y == 0 && stretch.width == 1920 && stretch.height == 1200);
+        assert(fit.x == 0 && fit.y == 60 && fit.width == 1920 && fit.height == 1080);
+        const auto wide = G::PresentRect(1600, 720, game_ratio, G::ScreenFitFit);
+        assert(wide.x == 160 && wide.y == 0 && wide.width == 1280 && wide.height == 720);
+    }
+    {
         // Vulkan dimensions are physical pixels; SDL reports logical window points at high DPI.
         const auto fit = vw_image_coverage(1920, 1080, 1920, 1200);
         const auto stretch = vw_image_coverage(1920, 1200, 1920, 1200);

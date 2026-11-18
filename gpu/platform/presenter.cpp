@@ -816,27 +816,12 @@ void Show(VkImage image, u32 width, u32 height, DisplayFormat format, bool draw)
         MemoryBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
         const VkExtent2D e = swapchain.extent;
-        VkImageBlit blit{};
-        if (fit == VwGraphics::ScreenFitStretch) {
-            blit = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                    .srcOffsets = {{0, 0, 0}, {s32(frame.width), s32(frame.height), 1}},
-                    .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                    .dstOffsets = {{0, 0, 0}, {s32(e.width), s32(e.height), 1}}};
-        } else {
-            // Letterboxed at the frame's own aspect ratio.
-            const float frame_aspect = float(frame.width) / float(frame.height);
-            u32 w = e.width, h = e.height;
-            if (frame_aspect > float(e.width) / float(e.height)) h = u32(float(e.width) / frame_aspect);
-            else w = u32(float(e.height) * frame_aspect);
-            const s32 x = s32(e.width - w) / 2, y = s32(e.height - h) / 2;
-            blit = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                    .srcOffsets = {{0, 0, 0}, {s32(frame.width), s32(frame.height), 1}},
-                    .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                    .dstOffsets = {{x, y, 0}, {x + s32(w), y + s32(h), 1}}};
-        }
-        coverage = vw_image_coverage(blit.dstOffsets[1].x - blit.dstOffsets[0].x,
-                                     blit.dstOffsets[1].y - blit.dstOffsets[0].y,
-                                     int(e.width), int(e.height));
+        const auto dst = VwGraphics::PresentRect(int(e.width), int(e.height), game_ratio, fit);
+        const VkImageBlit blit{.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                               .srcOffsets = {{0, 0, 0}, {s32(frame.width), s32(frame.height), 1}},
+                               .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                               .dstOffsets = {{dst.x, dst.y, 0}, {dst.x + dst.width, dst.y + dst.height, 1}}};
+        coverage = vw_image_coverage(dst.width, dst.height, int(e.width), int(e.height));
         vkCmdBlitImage(cmd, frame.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
     }
