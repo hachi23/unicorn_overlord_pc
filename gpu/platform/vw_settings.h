@@ -26,7 +26,6 @@ struct Values {
     std::atomic<int> window_size{0};
     /// Index into VwGraphics::ScreenFit: fit (letterbox) or stretch.
     std::atomic<int> screen_fit{0};
-    std::atomic<bool> image_stretched{false};  // last presented game image filled the window
     std::atomic<bool> vsync{true};
     /// Frames per second shown at most (VwGraphics::FpsLimits; 0 none). Read by VideoOut every
     /// vblank; VW_FPS_LIMIT (any number, for measurements) overrides it.

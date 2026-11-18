@@ -165,4 +165,12 @@ inline Size FrameSize(int target_w, int target_h, float game_ratio, int screen_f
     return {std::max(w, 1), std::max(h, 1)};
 }
 
+struct ImageRect { int x, y, width, height; };
+
+/// The displayed rectangle uses the game's aspect even when the cached frame was stretched.
+inline ImageRect PresentRect(int width, int height, float game_ratio, int screen_fit) {
+    const Size size = FrameSize(width, height, game_ratio, screen_fit);
+    return {(width - size.w) / 2, (height - size.h) / 2, size.w, size.h};
+}
+
 } // namespace VwGraphics
