@@ -24,6 +24,9 @@ class PortableSettings(unittest.TestCase):
         frozen = mock.patch.object(vw_launcher, 'FROZEN', True)
         frozen.start()
         self.addCleanup(frozen.stop)
+        here = mock.patch.object(vw_launcher, 'HERE', self.program)
+        here.start()
+        self.addCleanup(here.stop)
 
     def written(self):
         return json.loads((self.data / 'launcher.json').read_text(encoding='utf-8'))
@@ -49,6 +52,31 @@ class PortableSettings(unittest.TestCase):
         self.assertEqual(Path(settings['game_dir']), self.program / 'data' / 'game')
         self.assertEqual(Path(settings['source_dir']), self.program / 'data' / 'game')
         self.assertTrue(Path(settings['game_dir']).is_absolute())
+
+    def test_nested_data_override_paths_are_relative_to_program(self):
+        with mock.patch.dict(os.environ, {'VW_DATA_DIR': 'profiles/data', 'APPIMAGE': ''}):
+            data = vw_launcher.data_dir(vw_launcher.GAMES['unicorn'])
+            folder = data / 'game'
+            vw_launcher.save_settings(data, {'game_dir': str(folder)})
+            stored = json.loads((data / 'launcher.json').read_text(encoding='utf-8'))
+            self.assertEqual(stored, {'game_dir': 'profiles/data/game'})
+            self.assertEqual(vw_launcher.load_settings(data)['game_dir'], str(folder))
+
+    def test_nested_data_override_migrates_same_layout(self):
+        game_info = vw_launcher.GAMES['unicorn']
+        with mock.patch.dict(os.environ, {'VW_DATA_DIR': 'profiles/data', 'APPIMAGE': '', 'VW_INSTALL': '1'}):
+            data = vw_launcher.data_dir(game_info)
+            suffix = Path('profiles/data/game')
+            old = self.program.with_name('Old') / suffix
+            local = self.program / suffix
+            data.mkdir(parents=True)
+            config = data / 'launcher.json'
+            config.write_text(json.dumps({'game_dir': str(old), 'source_dir': str(old)}), encoding='utf-8')
+            with mock.patch.object(vw_launcher, 'check_game', return_value=(True, '')):
+                settings = vw_launcher.load_settings(data, game_info)
+            self.assertEqual(Path(settings['game_dir']), local)
+            self.assertEqual(json.loads(config.read_text(encoding='utf-8')),
+                             {'game_dir': suffix.as_posix(), 'source_dir': suffix.as_posix()})
 
     def test_round_trip_does_not_change_the_file(self):
         vw_launcher.save_settings(self.data, {'game_dir': str(self.data / 'game')})

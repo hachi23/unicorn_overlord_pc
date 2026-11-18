@@ -93,9 +93,7 @@ def data_dir(game):
     source tree the game's run directory."""
     if not FROZEN:
         return Path(os.environ.get('VW_DATA_DIR', RUNTIME / game['run_dir']))
-    appimage = os.environ.get('APPIMAGE')
-    beside = Path(appimage).absolute().parent if appimage else HERE
-    return beside / os.environ.get('VW_DATA_DIR', 'data')
+    return packaged_root() / os.environ.get('VW_DATA_DIR', 'data')
 
 
 def run_role(argv):
@@ -110,12 +108,17 @@ def run_role(argv):
 
 sys.path.insert(0, str(RUNTIME / 'scripts'))
 from patches import eboot_supported, game_app_version, game_title_id  # noqa: E402
+from portable_paths import program_root  # noqa: E402
+
+
+def packaged_root():
+    return program_root(HERE, os.environ.get('APPIMAGE'))
 
 
 PATH_SETTINGS = ('source_dir', 'game_dir')  # folders launcher.json keeps
 
 
-def stored_path(data, path):
+def stored_path(path):
     """A folder as launcher.json keeps it: relative to the program's folder (the one holding
     data/), with forward slashes, when it is inside it, so the whole folder can be moved or copied
     (a USB drive, another PC) and still finds its game. Any other folder stays absolute. From the
@@ -123,17 +126,17 @@ def stored_path(data, path):
     if not FROZEN or not isinstance(path, str) or not path or not Path(path).is_absolute():
         return path
     try:
-        return Path(path).resolve().relative_to(data.parent.resolve()).as_posix()
+        return Path(path).resolve().relative_to(packaged_root().resolve()).as_posix()
     except (OSError, ValueError):
         return path
 
 
-def resolved_path(data, path):
+def resolved_path(path):
     """The inverse of stored_path: a relative folder in launcher.json is from the program's folder,
     not from the current directory (a shortcut, a launcher or a terminal can start it anywhere)."""
     if not FROZEN or not isinstance(path, str) or not path or Path(path).is_absolute():
         return path
-    return str(data.parent / path)
+    return str(packaged_root() / path)
 
 
 def load_settings(data, game_info=None):
@@ -149,13 +152,13 @@ def load_settings(data, game_info=None):
         migrate_portable_settings(data, settings, game_info)
     for key in PATH_SETTINGS:
         if key in settings:
-            settings[key] = resolved_path(data, settings[key])
+            settings[key] = resolved_path(settings[key])
     return settings
 
 
 def save_settings(data, settings):
     data.mkdir(parents=True, exist_ok=True)
-    stored = {key: stored_path(data, value) if key in PATH_SETTINGS else value
+    stored = {key: stored_path(value) if key in PATH_SETTINGS else value
               for key, value in settings.items()}
     temp = data / 'launcher.json.tmp'  # renamed over it: an interrupted write keeps the old file
     temp.write_text(json.dumps(stored, indent=2), encoding='utf-8')
@@ -163,20 +166,25 @@ def save_settings(data, settings):
 
 
 def migrate_portable_settings(data, settings, game_info):
-    # The installer always puts its copy in data/game. A relocated legacy config points
-    # to that same layout at the old location, even if the old copy still exists.
-    if not FROZEN or data.name != 'data' or os.environ.get('VW_INSTALL') == '0':
+    if not FROZEN or os.environ.get('VW_INSTALL') == '0':
         return
     saved = settings.get('game_dir')
     if not isinstance(saved, str) or not Path(saved).is_absolute():
         return
+    root = packaged_root().resolve()
     old = Path(saved)
-    local = data / 'game'
-    if Path(*old.parts[-2:]) != Path('data/game') or not check_game(game_info, local)[0]:
+    local = data.resolve() / 'game'
+    if not local.is_relative_to(root):
         return
+    # Rebase an installed copy only when the old path has the same layout and the local dump works.
+    suffix = local.relative_to(root)
+    depth = len(suffix.parts)
+    if depth < 2 or Path(*old.parts[-depth:]) != suffix or not check_game(game_info, local)[0]:
+        return
+    old_root = old.parents[depth - 1]
     source = settings.get('source_dir')
-    if isinstance(source, str) and Path(source).is_absolute() and Path(source).is_relative_to(old.parent.parent):
-        relocated = data.parent / Path(source).relative_to(old.parent.parent)
+    if isinstance(source, str) and Path(source).is_absolute() and Path(source).is_relative_to(old_root):
+        relocated = root / Path(source).relative_to(old_root)
         if relocated == local or check_game(game_info, relocated)[0]:
             settings['source_dir'] = str(relocated)
     settings['game_dir'] = str(local)
